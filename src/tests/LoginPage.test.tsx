@@ -1,17 +1,19 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
-import LoginPage from '../pages/LoginPage';
 import { AuthProvider } from '../services/auth/AuthContext';
+import LoginPage from '../pages/LoginPage';
+import AuthService from '../services/auth.service';
 
-// Mock dla funkcji nawigacji
-jest.mock('react-router-dom', () => ({
-  ...jest.requireActual('react-router-dom'),
-  useNavigate: () => jest.fn(),
-  useLocation: () => ({ state: { from: { pathname: '/' } } }),
-}));
+// Mock the auth service
+jest.mock('../services/auth.service');
 
 describe('LoginPage Component', () => {
+  beforeEach(() => {
+    // Clear all mocks before each test
+    jest.clearAllMocks();
+  });
+
   const renderLoginPage = () => {
     return render(
       <BrowserRouter>
@@ -25,95 +27,129 @@ describe('LoginPage Component', () => {
   test('renders login form correctly', () => {
     renderLoginPage();
     
-    // Sprawdzenie, czy elementy formularza są widoczne
-    expect(screen.getByText('Logowanie do aplikacji RODO')).toBeInTheDocument();
-    expect(screen.getByLabelText(/Nazwa użytkownika/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Hasło/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Zaloguj się/i })).toBeInTheDocument();
+    // Check if the login form elements are rendered
+    expect(screen.getByText(/RODO Application Login/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Password/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Sign In/i })).toBeInTheDocument();
   });
 
-  test('validates empty form fields', async () => {
+  test('shows validation errors when form is submitted with empty fields', async () => {
     renderLoginPage();
     
-    // Kliknięcie przycisku logowania bez wypełnienia pól
-    fireEvent.click(screen.getByRole('button', { name: /Zaloguj się/i }));
+    // Submit the form without filling in any fields
+    fireEvent.click(screen.getByRole('button', { name: /Sign In/i }));
     
-    // Sprawdzenie, czy pojawił się komunikat o błędzie
+    // Check if validation errors are displayed
     await waitFor(() => {
-      expect(screen.getByText('Proszę wprowadzić nazwę użytkownika i hasło')).toBeInTheDocument();
+      expect(screen.getByText(/Username is required/i)).toBeInTheDocument();
+      expect(screen.getByText(/Password is required/i)).toBeInTheDocument();
     });
   });
 
-  test('shows password strength indicator when typing password', async () => {
-    renderLoginPage();
-    
-    // Wprowadzenie słabego hasła
-    fireEvent.change(screen.getByLabelText(/Hasło/i), { target: { value: 'weak' } });
-    
-    // Sprawdzenie, czy pojawił się wskaźnik siły hasła
-    await waitFor(() => {
-      expect(screen.getByText(/Hasło jest zbyt słabe/i)).toBeInTheDocument();
+  test('calls login service when form is submitted with valid data', async () => {
+    // Mock successful login
+    AuthService.login.mockResolvedValue({
+      token: 'fake-token',
+      user: { id: 1, username: 'testuser', role: 'user' }
     });
     
-    // Wprowadzenie silnego hasła
-    fireEvent.change(screen.getByLabelText(/Hasło/i), { target: { value: 'StrongP@ssw0rd' } });
+    renderLoginPage();
     
-    // Sprawdzenie, czy wskaźnik siły hasła się zmienił
+    // Fill in the form
+    fireEvent.change(screen.getByLabelText(/Username/i), {
+      target: { value: 'testuser' }
+    });
+    
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password123!' }
+    });
+    
+    // Submit the form
+    fireEvent.click(screen.getByRole('button', { name: /Sign In/i }));
+    
+    // Check if login service was called with correct parameters
     await waitFor(() => {
-      expect(screen.getByText(/Hasło jest silne/i)).toBeInTheDocument();
+      expect(AuthService.login).toHaveBeenCalledWith('testuser', 'Password123!');
     });
   });
 
-  test('toggles password visibility', () => {
-    renderLoginPage();
-    
-    // Wprowadzenie hasła
-    fireEvent.change(screen.getByLabelText(/Hasło/i), { target: { value: 'test123' } });
-    
-    // Sprawdzenie, czy pole jest typu password (hasło ukryte)
-    expect(screen.getByLabelText(/Hasło/i)).toHaveAttribute('type', 'password');
-    
-    // Kliknięcie przycisku pokazywania hasła
-    fireEvent.click(screen.getByLabelText(/toggle password visibility/i));
-    
-    // Sprawdzenie, czy pole jest typu text (hasło widoczne)
-    expect(screen.getByLabelText(/Hasło/i)).toHaveAttribute('type', 'text');
-  });
-
-  test('attempts login with valid credentials', async () => {
-    renderLoginPage();
-    
-    // Wprowadzenie poprawnych danych logowania
-    fireEvent.change(screen.getByLabelText(/Nazwa użytkownika/i), { target: { value: 'admin' } });
-    fireEvent.change(screen.getByLabelText(/Hasło/i), { target: { value: 'admin123' } });
-    
-    // Kliknięcie przycisku logowania
-    fireEvent.click(screen.getByRole('button', { name: /Zaloguj się/i }));
-    
-    // Sprawdzenie, czy pojawił się wskaźnik ładowania
-    await waitFor(() => {
-      expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  test('shows error message when login fails', async () => {
+    // Mock failed login
+    const errorMessage = 'Invalid username or password';
+    AuthService.login.mockRejectedValue({
+      error: { message: errorMessage }
     });
     
-    // Sprawdzenie, czy pojawił się komunikat o pomyślnym logowaniu
-    await waitFor(() => {
-      expect(screen.getByText(/Logowanie pomyślne/i)).toBeInTheDocument();
-    }, { timeout: 2000 });
-  });
-
-  test('shows error for invalid credentials', async () => {
     renderLoginPage();
     
-    // Wprowadzenie niepoprawnych danych logowania
-    fireEvent.change(screen.getByLabelText(/Nazwa użytkownika/i), { target: { value: 'wrong' } });
-    fireEvent.change(screen.getByLabelText(/Hasło/i), { target: { value: 'wrong' } });
+    // Fill in the form
+    fireEvent.change(screen.getByLabelText(/Username/i), {
+      target: { value: 'testuser' }
+    });
     
-    // Kliknięcie przycisku logowania
-    fireEvent.click(screen.getByRole('button', { name: /Zaloguj się/i }));
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'wrongpassword' }
+    });
     
-    // Sprawdzenie, czy pojawił się komunikat o błędzie
+    // Submit the form
+    fireEvent.click(screen.getByRole('button', { name: /Sign In/i }));
+    
+    // Check if error message is displayed
     await waitFor(() => {
-      expect(screen.getByText(/Nieprawidłowa nazwa użytkownika lub hasło/i)).toBeInTheDocument();
-    }, { timeout: 2000 });
+      expect(screen.getByText(errorMessage)).toBeInTheDocument();
+    });
+  });
+
+  test('shows password strength indicator when password is entered', () => {
+    renderLoginPage();
+    
+    // Enter a weak password
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'weak' }
+    });
+    
+    // Check if weak indicator is shown
+    expect(screen.getByText(/Weak/i)).toBeInTheDocument();
+    
+    // Enter a medium strength password
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Medium123' }
+    });
+    
+    // Check if medium indicator is shown
+    expect(screen.getByText(/Medium/i)).toBeInTheDocument();
+    
+    // Enter a strong password
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'StrongP@ssw0rd!' }
+    });
+    
+    // Check if strong indicator is shown
+    expect(screen.getByText(/Strong/i)).toBeInTheDocument();
+  });
+
+  test('toggles password visibility when visibility icon is clicked', () => {
+    renderLoginPage();
+    
+    // Enter a password
+    fireEvent.change(screen.getByLabelText(/Password/i), {
+      target: { value: 'Password123!' }
+    });
+    
+    // Password should be hidden initially
+    expect(screen.getByLabelText(/Password/i)).toHaveAttribute('type', 'password');
+    
+    // Click the visibility toggle button
+    fireEvent.click(screen.getByRole('button', { name: /toggle password visibility/i }));
+    
+    // Password should be visible now
+    expect(screen.getByLabelText(/Password/i)).toHaveAttribute('type', 'text');
+    
+    // Click the visibility toggle button again
+    fireEvent.click(screen.getByRole('button', { name: /toggle password visibility/i }));
+    
+    // Password should be hidden again
+    expect(screen.getByLabelText(/Password/i)).toHaveAttribute('type', 'password');
   });
 });

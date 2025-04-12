@@ -1,19 +1,70 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
-import RequestsPage from '../pages/RequestsPage';
 import { AuthProvider } from '../services/auth/AuthContext';
+import RequestsPage from '../pages/RequestsPage';
+import RequestService from '../services/request.service';
 
-// Mock dla kontekstu uwierzytelniania
-jest.mock('../services/auth/AuthContext', () => ({
-  ...jest.requireActual('../services/auth/AuthContext'),
-  useAuth: () => ({
-    user: { username: 'testuser', role: 'iod' },
-    hasPermission: () => true
-  })
-}));
+// Mock the services
+jest.mock('../services/request.service');
+jest.mock('../services/auth/AuthContext', () => {
+  const originalModule = jest.requireActual('../services/auth/AuthContext');
+  return {
+    ...originalModule,
+    useAuth: () => ({
+      hasPermission: jest.fn().mockImplementation((resource, action) => true),
+      currentUser: { id: 1, username: 'testuser', role: 'admin' }
+    })
+  };
+});
 
 describe('RequestsPage Component', () => {
+  const mockRequests = {
+    data: [
+      {
+        id: 1,
+        dataSubject: 'John Doe',
+        type: 'access',
+        typeName: 'Access to Data',
+        submissionDate: '2025-04-01T10:00:00Z',
+        deadlineDate: '2025-05-01T10:00:00Z',
+        status: 'new',
+        contactInfo: 'john.doe@example.com',
+        description: 'Request for personal data access'
+      },
+      {
+        id: 2,
+        dataSubject: 'Jane Smith',
+        type: 'erasure',
+        typeName: 'Data Erasure',
+        submissionDate: '2025-04-02T10:00:00Z',
+        deadlineDate: '2025-05-02T10:00:00Z',
+        status: 'in_progress',
+        contactInfo: 'jane.smith@example.com',
+        description: 'Request for data erasure'
+      }
+    ],
+    pagination: {
+      total: 2,
+      page: 1,
+      limit: 10
+    }
+  };
+
+  beforeEach(() => {
+    // Clear all mocks before each test
+    jest.clearAllMocks();
+    
+    // Mock the getRequests function
+    RequestService.getRequests.mockResolvedValue(mockRequests);
+    
+    // Mock the getRequestById function
+    RequestService.getRequestById.mockImplementation((id) => {
+      const request = mockRequests.data.find(req => req.id === id);
+      return Promise.resolve(request || null);
+    });
+  });
+
   const renderRequestsPage = () => {
     return render(
       <BrowserRouter>
@@ -24,198 +75,184 @@ describe('RequestsPage Component', () => {
     );
   };
 
-  test('renders requests page correctly', () => {
+  test('renders requests page correctly', async () => {
     renderRequestsPage();
     
-    // Sprawdzenie, czy główne elementy strony są widoczne
-    expect(screen.getByText('Wnioski podmiotów danych')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Nowy wniosek/i })).toBeInTheDocument();
-    expect(screen.getByLabelText(/Wyszukaj/i)).toBeInTheDocument();
+    // Check if the page title is rendered
+    expect(screen.getByText(/Data Subject Requests/i)).toBeInTheDocument();
     
-    // Sprawdzenie, czy tabela wniosków jest widoczna
-    expect(screen.getByRole('table')).toBeInTheDocument();
-    expect(screen.getByText('Wnioskodawca')).toBeInTheDocument();
-    expect(screen.getByText('Typ wniosku')).toBeInTheDocument();
-    expect(screen.getByText('Data złożenia')).toBeInTheDocument();
-    expect(screen.getByText('Status')).toBeInTheDocument();
-  });
-
-  test('filters requests by status', async () => {
-    renderRequestsPage();
+    // Check if the "New Request" button is rendered
+    expect(screen.getByText(/New Request/i)).toBeInTheDocument();
     
-    // Sprawdzenie, czy wszystkie wnioski są początkowo widoczne
-    expect(screen.getAllByRole('row').length).toBeGreaterThan(1);
+    // Check if the search and filter controls are rendered
+    expect(screen.getByPlaceholderText(/Search by data subject or description/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Status/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Type/i)).toBeInTheDocument();
     
-    // Wybór filtra statusu "Nowy"
-    fireEvent.mouseDown(screen.getByLabelText('Status'));
-    fireEvent.click(screen.getByText('Nowe'));
-    
-    // Sprawdzenie, czy lista została przefiltrowana
+    // Check if the requests table is rendered with data
     await waitFor(() => {
-      const rows = screen.getAllByRole('row');
-      // Nagłówek + co najmniej jeden wiersz z danymi
-      expect(rows.length).toBeGreaterThan(1);
-      // Sprawdzenie, czy w tabeli jest widoczny wniosek o statusie "Nowy"
-      expect(screen.getByText('Maria Wiśniewska')).toBeInTheDocument();
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByText('Jane Smith')).toBeInTheDocument();
+    });
+    
+    // Check if the service was called with correct parameters
+    expect(RequestService.getRequests).toHaveBeenCalledWith({
+      page: 1,
+      limit: 10,
+      status: undefined,
+      type: undefined,
+      search: undefined
     });
   });
 
-  test('filters requests by type', async () => {
+  test('filters requests when search and filters are applied', async () => {
     renderRequestsPage();
     
-    // Wybór filtra typu wniosku "Usunięcie danych"
-    fireEvent.mouseDown(screen.getByLabelText('Typ wniosku'));
-    fireEvent.click(screen.getByText('Usunięcie danych'));
+    // Enter search query
+    fireEvent.change(screen.getByPlaceholderText(/Search by data subject or description/i), {
+      target: { value: 'john' }
+    });
     
-    // Sprawdzenie, czy lista została przefiltrowana
+    // Select status filter
+    fireEvent.change(screen.getByLabelText(/Status/i), {
+      target: { value: 'new' }
+    });
+    
+    // Select type filter
+    fireEvent.change(screen.getByLabelText(/Type/i), {
+      target: { value: 'access' }
+    });
+    
+    // Check if the service was called with updated parameters
     await waitFor(() => {
-      const rows = screen.getAllByRole('row');
-      expect(rows.length).toBeGreaterThan(1);
-      // Sprawdzenie, czy w tabeli jest widoczny wniosek o typie "Usunięcie danych"
-      expect(screen.getByText('Maria Wiśniewska')).toBeInTheDocument();
+      expect(RequestService.getRequests).toHaveBeenCalledWith(
+        expect.objectContaining({
+          search: 'john',
+          status: 'new',
+          type: 'access'
+        })
+      );
     });
   });
 
-  test('searches requests by subject name', async () => {
+  test('opens create request dialog when "New Request" button is clicked', async () => {
     renderRequestsPage();
     
-    // Wyszukiwanie wniosku po nazwie wnioskodawcy
-    fireEvent.change(screen.getByLabelText(/Wyszukaj/i), { target: { value: 'Kowalski' } });
+    // Click the "New Request" button
+    fireEvent.click(screen.getByText(/New Request/i));
     
-    // Sprawdzenie, czy lista została przefiltrowana
+    // Check if the dialog is opened with correct title
     await waitFor(() => {
-      const rows = screen.getAllByRole('row');
-      expect(rows.length).toBeGreaterThan(1);
-      // Sprawdzenie, czy w tabeli jest widoczny wniosek zawierający "Kowalski" w nazwie wnioskodawcy
-      expect(screen.getByText('Jan Kowalski')).toBeInTheDocument();
+      expect(screen.getByText(/New Data Subject Request/i)).toBeInTheDocument();
     });
+    
+    // Check if the form fields are rendered
+    expect(screen.getByLabelText(/Request Type/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Data Subject Name/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Contact Information/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Request Description/i)).toBeInTheDocument();
   });
 
-  test('opens new request dialog', async () => {
+  test('creates a new request when form is submitted', async () => {
+    // Mock successful request creation
+    RequestService.createRequest.mockResolvedValue({
+      id: 3,
+      dataSubject: 'New Subject',
+      type: 'rectification',
+      status: 'new'
+    });
+    
     renderRequestsPage();
     
-    // Kliknięcie przycisku nowego wniosku
-    fireEvent.click(screen.getByRole('button', { name: /Nowy wniosek/i }));
+    // Click the "New Request" button
+    fireEvent.click(screen.getByText(/New Request/i));
     
-    // Sprawdzenie, czy dialog został otwarty
+    // Fill in the form
     await waitFor(() => {
-      expect(screen.getByText('Nowy wniosek podmiotu danych')).toBeInTheDocument();
-      expect(screen.getByText('Dane wnioskodawcy')).toBeInTheDocument();
-    });
-  });
-
-  test('navigates through request form steps', async () => {
-    renderRequestsPage();
-    
-    // Kliknięcie przycisku nowego wniosku
-    fireEvent.click(screen.getByRole('button', { name: /Nowy wniosek/i }));
-    
-    // Wypełnienie pierwszego kroku formularza
-    await waitFor(() => {
-      fireEvent.change(screen.getByLabelText(/Imię i nazwisko wnioskodawcy/i), { 
-        target: { value: 'Test Testowy' } 
-      });
-      fireEvent.change(screen.getByLabelText(/Dane kontaktowe/i), { 
-        target: { value: 'test@example.com' } 
-      });
-    });
-    
-    // Przejście do następnego kroku
-    fireEvent.click(screen.getByRole('button', { name: /Dalej/i }));
-    
-    // Sprawdzenie, czy drugi krok jest widoczny
-    await waitFor(() => {
-      expect(screen.getByLabelText('Typ wniosku')).toBeInTheDocument();
-    });
-    
-    // Wybór typu wniosku
-    fireEvent.mouseDown(screen.getByLabelText('Typ wniosku'));
-    fireEvent.click(screen.getByText('Dostęp do danych'));
-    
-    // Przejście do następnego kroku
-    fireEvent.click(screen.getByRole('button', { name: /Dalej/i }));
-    
-    // Sprawdzenie, czy trzeci krok jest widoczny
-    await waitFor(() => {
-      expect(screen.getByLabelText(/Szczegółowy opis wniosku/i)).toBeInTheDocument();
-    });
-    
-    // Wypełnienie opisu wniosku
-    fireEvent.change(screen.getByLabelText(/Szczegółowy opis wniosku/i), { 
-      target: { value: 'Opis testowego wniosku o dostęp do danych' } 
-    });
-    
-    // Przejście do następnego kroku
-    fireEvent.click(screen.getByRole('button', { name: /Dalej/i }));
-    
-    // Sprawdzenie, czy podsumowanie jest widoczne
-    await waitFor(() => {
-      expect(screen.getByText('Podsumowanie wniosku')).toBeInTheDocument();
-      expect(screen.getByText('Test Testowy')).toBeInTheDocument();
-      expect(screen.getByText('test@example.com')).toBeInTheDocument();
-      expect(screen.getByText('Dostęp do danych')).toBeInTheDocument();
-      expect(screen.getByText('Opis testowego wniosku o dostęp do danych')).toBeInTheDocument();
-    });
-  });
-
-  test('submits new request', async () => {
-    renderRequestsPage();
-    
-    // Kliknięcie przycisku nowego wniosku
-    fireEvent.click(screen.getByRole('button', { name: /Nowy wniosek/i }));
-    
-    // Wypełnienie pierwszego kroku formularza
-    await waitFor(() => {
-      fireEvent.change(screen.getByLabelText(/Imię i nazwisko wnioskodawcy/i), { 
-        target: { value: 'Test Testowy' } 
-      });
-      fireEvent.change(screen.getByLabelText(/Dane kontaktowe/i), { 
-        target: { value: 'test@example.com' } 
+      fireEvent.change(screen.getByLabelText(/Request Type/i), {
+        target: { value: 'rectification' }
       });
     });
     
-    // Przejście przez wszystkie kroki formularza
-    fireEvent.click(screen.getByRole('button', { name: /Dalej/i }));
+    fireEvent.change(screen.getByLabelText(/Data Subject Name/i), {
+      target: { value: 'New Subject' }
+    });
+    
+    fireEvent.change(screen.getByLabelText(/Contact Information/i), {
+      target: { value: 'new.subject@example.com' }
+    });
+    
+    fireEvent.change(screen.getByLabelText(/Request Description/i), {
+      target: { value: 'This is a new request for data rectification' }
+    });
+    
+    // Submit the form
+    fireEvent.click(screen.getByRole('button', { name: /Save/i }));
+    
+    // Check if the service was called with correct parameters
     await waitFor(() => {
-      expect(screen.getByLabelText('Typ wniosku')).toBeInTheDocument();
+      expect(RequestService.createRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'rectification',
+          dataSubject: 'New Subject',
+          contactInfo: 'new.subject@example.com',
+          description: 'This is a new request for data rectification'
+        })
+      );
     });
     
-    fireEvent.click(screen.getByRole('button', { name: /Dalej/i }));
-    await waitFor(() => {
-      expect(screen.getByLabelText(/Szczegółowy opis wniosku/i)).toBeInTheDocument();
-    });
-    
-    fireEvent.change(screen.getByLabelText(/Szczegółowy opis wniosku/i), { 
-      target: { value: 'Opis testowego wniosku' } 
-    });
-    
-    fireEvent.click(screen.getByRole('button', { name: /Dalej/i }));
-    await waitFor(() => {
-      expect(screen.getByText('Podsumowanie wniosku')).toBeInTheDocument();
-    });
-    
-    // Złożenie wniosku
-    fireEvent.click(screen.getByRole('button', { name: /Złóż wniosek/i }));
-    
-    // Sprawdzenie, czy pojawił się komunikat o sukcesie
-    await waitFor(() => {
-      expect(screen.getByText(/Wniosek został pomyślnie złożony/i)).toBeInTheDocument();
-    });
+    // Check if the requests list was refreshed
+    expect(RequestService.getRequests).toHaveBeenCalledTimes(2);
   });
 
-  test('opens request details dialog', async () => {
+  test('opens view request dialog when view button is clicked', async () => {
     renderRequestsPage();
     
-    // Kliknięcie przycisku podglądu dla pierwszego wniosku
-    const viewButtons = screen.getAllByRole('button', { name: '' });
+    // Wait for requests to load
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
+    
+    // Click the view button for the first request
+    const viewButtons = screen.getAllByRole('button', { name: /visibility/i });
     fireEvent.click(viewButtons[0]);
     
-    // Sprawdzenie, czy dialog ze szczegółami został otwarty
+    // Check if the service was called with correct ID
+    expect(RequestService.getRequestById).toHaveBeenCalledWith(1);
+    
+    // Check if the dialog is opened with request details
     await waitFor(() => {
-      expect(screen.getByText(/Wniosek:/i)).toBeInTheDocument();
-      expect(screen.getByText('Wnioskodawca')).toBeInTheDocument();
-      expect(screen.getByText('Dane kontaktowe')).toBeInTheDocument();
-      expect(screen.getByText('Opis wniosku')).toBeInTheDocument();
+      expect(screen.getByText(/Request Details/i)).toBeInTheDocument();
     });
+  });
+
+  test('deletes a request when delete button is clicked and confirmed', async () => {
+    // Mock window.confirm to return true
+    window.confirm = jest.fn().mockImplementation(() => true);
+    
+    // Mock successful request deletion
+    RequestService.deleteRequest.mockResolvedValue({ message: 'Request deleted successfully' });
+    
+    renderRequestsPage();
+    
+    // Wait for requests to load
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
+    
+    // Click the delete button for the first request
+    const deleteButtons = screen.getAllByRole('button', { name: /delete/i });
+    fireEvent.click(deleteButtons[0]);
+    
+    // Check if confirmation was requested
+    expect(window.confirm).toHaveBeenCalled();
+    
+    // Check if the service was called with correct ID
+    await waitFor(() => {
+      expect(RequestService.deleteRequest).toHaveBeenCalledWith(1);
+    });
+    
+    // Check if the requests list was refreshed
+    expect(RequestService.getRequests).toHaveBeenCalledTimes(2);
   });
 });
