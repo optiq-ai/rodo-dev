@@ -7,6 +7,6 @@ RUN npm install
 
 COPY . .
 
-EXPOSE 3011
-ENV PORT=3011
+EXPOSE ${BACKEND_PORT}
+ENV PORT=${BACKEND_PORT}
 CMD ["npm", "start"]

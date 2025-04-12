@@ -20,7 +20,7 @@ services:
       - postgres
     environment:
       NODE_ENV: development
-      PORT: 3011
+      PORT: ${BACKEND_PORT}
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/rodo_db
       JWT_SECRET: rodo_secret_key_change_in_production
       JWT_EXPIRATION: 3600
@@ -35,7 +35,7 @@ services:
       - backend
     environment:
       REACT_APP_API_URL: http://localhost:3011/api/v1
-      PORT: 3010
+      PORT: ${FRONTEND_PORT}
 
 volumes:
   postgres_data:
