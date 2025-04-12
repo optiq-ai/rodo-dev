@@ -4,7 +4,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const path = require('path');
 const dotenv = require('dotenv');
-const { testConnection } = require('./config/database');
+const { connectToDatabase } = require('./config/database');
 const logger = require('./utils/logger');
 const routes = require('./routes');
 
@@ -67,7 +67,7 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
   try {
     // Test database connection
-    const dbConnected = await testConnection();
+    const dbConnected = await connectToDatabase();
     if (!dbConnected) {
       logger.error('Failed to connect to the database. Server will not start.');
       process.exit(1);
