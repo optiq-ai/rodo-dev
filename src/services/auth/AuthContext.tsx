@@ -1,150 +1,107 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { secureLocalStorage, hashPassword, verifyPassword } from '../../utils/securityUtils';
+import React, { createContext, useState, useEffect, useContext } from 'react';
+import AuthService from '../services/auth.service';
 
-// Definicja typów dla kontekstu uwierzytelniania
-interface User {
-  id: string;
-  username: string;
-  email: string;
-  role: 'admin' | 'iod' | 'employee';
-  permissions: string[];
-}
+// Create context
+const AuthContext = createContext(null);
 
-interface AuthContextType {
-  user: User | null;
-  isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<boolean>;
-  logout: () => void;
-  hasPermission: (permission: string) => boolean;
-}
+// Auth provider component
+export const AuthProvider = ({ children }) => {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-// Tworzenie kontekstu uwierzytelniania
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+  // Initialize auth state
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (AuthService.isAuthenticated()) {
+          const userData = await AuthService.getCurrentUser();
+          setCurrentUser(userData);
+        }
+      } catch (err) {
+        console.error('Auth initialization error:', err);
+        setError(err.message || 'Authentication failed');
+        // Clear invalid auth data
+        AuthService.logout();
+      } finally {
+        setLoading(false);
+      }
+    };
 
-// Hook do używania kontekstu uwierzytelniania
+    initAuth();
+  }, []);
+
+  // Login function
+  const login = async (username, password) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await AuthService.login(username, password);
+      setCurrentUser(data.user);
+      return data;
+    } catch (err) {
+      setError(err.error?.message || 'Login failed');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Logout function
+  const logout = async () => {
+    setLoading(true);
+    try {
+      await AuthService.logout();
+      setCurrentUser(null);
+    } catch (err) {
+      console.error('Logout error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Check if user has specific role
+  const hasRole = (role) => {
+    if (!currentUser) return false;
+    return currentUser.role === role || currentUser.role === 'admin';
+  };
+
+  // Check if user has specific permission
+  const hasPermission = (resource, action) => {
+    if (!currentUser) return false;
+    if (currentUser.role === 'admin') return true;
+    
+    return currentUser.permissions?.includes(`${resource}:${action}`) || 
+           currentUser.permissions?.includes(`${resource}:all`) ||
+           currentUser.permissions?.includes('*:*');
+  };
+
+  // Context value
+  const value = {
+    currentUser,
+    loading,
+    error,
+    login,
+    logout,
+    hasRole,
+    hasPermission,
+    isAuthenticated: !!currentUser
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+// Custom hook to use auth context
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 };
 
-// Przykładowi użytkownicy (w rzeczywistej aplikacji byliby pobierani z API)
-const mockUsers = [
-  {
-    id: '1',
-    username: 'admin',
-    email: 'admin@example.com',
-    password: hashPassword('admin123'), // Używamy hashPassword zamiast przechowywania jawnych haseł
-    role: 'admin',
-    permissions: ['all'],
-  },
-  {
-    id: '2',
-    username: 'iod',
-    email: 'iod@example.com',
-    password: hashPassword('iod123'),
-    role: 'iod',
-    permissions: ['view_all', 'edit_documents', 'manage_requests', 'view_reports'],
-  },
-  {
-    id: '3',
-    username: 'employee',
-    email: 'employee@example.com',
-    password: hashPassword('employee123'),
-    role: 'employee',
-    permissions: ['view_documents', 'report_incidents'],
-  },
-];
-
-// Provider kontekstu uwierzytelniania
-interface AuthProviderProps {
-  children: ReactNode;
-}
-
-export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => {
-    // Sprawdzenie, czy użytkownik jest już zalogowany (z secureLocalStorage)
-    return secureLocalStorage.getItem('user');
-  });
-
-  const isAuthenticated = !!user;
-
-  // Efekt do automatycznego wylogowania po czasie bezczynności
-  useEffect(() => {
-    if (!isAuthenticated) return;
-
-    let inactivityTimer: NodeJS.Timeout;
-    
-    const resetTimer = () => {
-      clearTimeout(inactivityTimer);
-      // Wyloguj po 30 minutach bezczynności
-      inactivityTimer = setTimeout(() => {
-        logout();
-        alert('Zostałeś automatycznie wylogowany z powodu braku aktywności.');
-      }, 30 * 60 * 1000);
-    };
-
-    // Resetuj timer przy każdej aktywności użytkownika
-    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-    
-    events.forEach(event => {
-      window.addEventListener(event, resetTimer);
-    });
-    
-    resetTimer();
-    
-    return () => {
-      clearTimeout(inactivityTimer);
-      events.forEach(event => {
-        window.removeEventListener(event, resetTimer);
-      });
-    };
-  }, [isAuthenticated]);
-
-  const login = async (username: string, password: string): Promise<boolean> => {
-    // W rzeczywistej aplikacji, to byłoby zapytanie do API
-    const foundUser = mockUsers.find(
-      (u) => u.username === username && verifyPassword(password, u.password)
-    );
-
-    if (foundUser) {
-      // Usunięcie hasła przed zapisaniem użytkownika
-      const { password: _, ...userWithoutPassword } = foundUser;
-      setUser(userWithoutPassword as User);
-      
-      // Używamy secureLocalStorage zamiast zwykłego localStorage
-      secureLocalStorage.setItem('user', userWithoutPassword);
-      
-      // Zapisujemy czas logowania
-      secureLocalStorage.setItem('lastActivity', new Date().toISOString());
-      
-      return true;
-    }
-
-    return false;
-  };
-
-  const logout = () => {
-    setUser(null);
-    secureLocalStorage.removeItem('user');
-    secureLocalStorage.removeItem('lastActivity');
-  };
-
-  const hasPermission = (permission: string): boolean => {
-    if (!user) return false;
-    if (user.role === 'admin' || user.permissions.includes('all')) return true;
-    return user.permissions.includes(permission);
-  };
-
-  const value = {
-    user,
-    isAuthenticated,
-    login,
-    logout,
-    hasPermission,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
+export default AuthContext;
