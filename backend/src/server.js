@@ -4,6 +4,8 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const path = require('path');
 const dotenv = require('dotenv');
+const http = require('http');
+const WebSocket = require('ws');
 const { connectToDatabase } = require('./config/database');
 const logger = require('./utils/logger');
 const routes = require('./routes');
@@ -13,10 +15,56 @@ dotenv.config();
 
 // Initialize Express app
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3011;
+
+// Create HTTP server
+const server = http.createServer(app);
+
+// Create WebSocket server
+const wss = new WebSocket.Server({ server });
+
+// WebSocket connection handler
+wss.on('connection', (ws) => {
+  logger.info('Client connected to WebSocket');
+  
+  // Send initial message
+  ws.send(JSON.stringify({ type: 'connection', message: 'Connected to RODO WebSocket server' }));
+  
+  // Handle messages from client
+  ws.on('message', (message) => {
+    logger.info(`Received WebSocket message: ${message}`);
+    try {
+      const data = JSON.parse(message);
+      // Handle different message types
+      switch (data.type) {
+        case 'ping':
+          ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
+          break;
+        default:
+          ws.send(JSON.stringify({ type: 'error', message: 'Unknown message type' }));
+      }
+    } catch (error) {
+      logger.error('WebSocket message error:', error);
+      ws.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
+    }
+  });
+  
+  // Handle connection close
+  ws.on('close', () => {
+    logger.info('Client disconnected from WebSocket');
+  });
+});
 
 // Middleware
-app.use(helmet()); // Security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      'connect-src': ["'self'", process.env.CORS_ORIGIN, 'ws://localhost:3011', 'wss://rodo.optiq-ai.pl:3011']
+    }
+  }
+})); // Security headers with WebSocket allowance
+
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -74,8 +122,9 @@ const startServer = async () => {
     }
     
     // Start the server
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);
+      logger.info(`WebSocket server is running on ws://localhost:${PORT}`);
     });
   } catch (error) {
     logger.error('Failed to start server:', error);
@@ -84,7 +133,7 @@ const startServer = async () => {
 };
 
 // Export for testing
-module.exports = { app, startServer };
+module.exports = { app, server, startServer };
 
 // Start server if this file is run directly
 if (require.main === module) {
