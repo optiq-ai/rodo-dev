@@ -1,13 +1,24 @@
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3011/api/v1';
+// Determine the API URL based on the current environment
+const getApiUrl = () => {
+  // Check if we're running in production (on the actual domain)
+  if (window.location.hostname === 'rodo.optiq-ai.pl') {
+    return `${window.location.protocol}//${window.location.hostname}:3011/api/v1`;
+  }
+  // Default to localhost for development
+  return process.env.REACT_APP_API_URL || 'http://localhost:3011/api/v1';
+};
+
+const API_URL = getApiUrl();
 
 // Create axios instance with default config
 const api = axios.create({
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json'
-  }
+  },
+  withCredentials: true // Enable sending cookies with cross-origin requests
 });
 
 // Request interceptor for adding auth token

@@ -1,5 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 
+// Get WebSocket URL based on current environment
+const getWebSocketUrl = () => {
+  // Check if we're running in production (on the actual domain)
+  if (window.location.hostname === 'rodo.optiq-ai.pl') {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.hostname}:3011/ws`;
+  }
+  // Default to localhost for development
+  return 'ws://localhost:3011/ws';
+};
+
 // WebSocket service for real-time communication
 const WebSocketService = {
   socket: null,
@@ -7,10 +18,12 @@ const WebSocketService = {
   connectionCallbacks: [],
   
   // Connect to WebSocket server
-  connect: (url) => {
+  connect: (url = getWebSocketUrl()) => {
     if (WebSocketService.socket) {
       WebSocketService.socket.close();
     }
+    
+    console.log('Connecting to WebSocket at:', url);
     
     // Create WebSocket connection
     WebSocketService.socket = new WebSocket(url);
@@ -95,7 +108,7 @@ const WebSocketService = {
 };
 
 // React hook for using WebSocket
-export const useWebSocket = (url) => {
+export const useWebSocket = (url = getWebSocketUrl()) => {
   const [connected, setConnected] = useState(false);
   const [lastMessage, setLastMessage] = useState(null);
   
