@@ -1,10 +1,15 @@
+const { sequelize } = require('./config/database');
+const { User, Role, Permission } = require('./models');
 const bcrypt = require('bcrypt');
-const { User, Role, Permission } = require('../models');
-const logger = require('../utils/logger');
+const logger = require('./utils/logger');
 
 // Function to create default admin user if none exists
 const createDefaultUsers = async () => {
   try {
+    // First, sync all models with the database
+    await sequelize.sync({ alter: true });
+    logger.info('Database tables synchronized successfully');
+    
     // Check if admin user exists
     const adminExists = await User.findOne({
       where: { role: 'admin' }
@@ -78,6 +83,7 @@ const createDefaultUsers = async () => {
 
   } catch (error) {
     logger.error('Error creating default users:', error);
+    throw error; // Re-throw to handle in the calling function
   }
 };
 
@@ -135,6 +141,7 @@ const createDefaultPermissions = async () => {
     logger.info('Default permissions created and associated with roles');
   } catch (error) {
     logger.error('Error creating default permissions:', error);
+    throw error; // Re-throw to handle in the calling function
   }
 };
 
