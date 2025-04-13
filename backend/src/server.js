@@ -7,10 +7,8 @@ const dotenv = require('dotenv');
 const http = require('http');
 const WebSocket = require('ws');
 const { sequelize, connectToDatabase } = require('./config/database');
-const { createDefaultUsers } = require('./config/seedData');
 const logger = require('./utils/logger');
 const routes = require('./routes');
-const models = require('./models');
 
 // Load environment variables
 dotenv.config();
@@ -121,6 +119,29 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Function to initialize database and create default data
+const initializeDatabase = async () => {
+  try {
+    // Sync all models with the database
+    await sequelize.sync({ alter: true });
+    logger.info('Database tables synchronized successfully');
+    
+    // After database is synced, import models and seed data
+    // This avoids circular dependencies by importing models only after sync
+    const models = require('./models');
+    const { createDefaultUsers } = require('./config/seedData');
+    
+    // Initialize database with default users - pass sequelize and models as parameters
+    await createDefaultUsers(sequelize, models);
+    logger.info('Database initialization completed');
+    
+    return true;
+  } catch (error) {
+    logger.error('Failed to initialize database:', error);
+    return false;
+  }
+};
+
 // Start server
 const startServer = async () => {
   try {
@@ -131,9 +152,11 @@ const startServer = async () => {
       process.exit(1);
     }
     
-    // Initialize database with default users - pass sequelize and models as parameters
-    await createDefaultUsers(sequelize, models);
-    logger.info('Database initialization completed');
+    // Initialize database and create default data
+    const dbInitialized = await initializeDatabase();
+    if (!dbInitialized) {
+      logger.error('Failed to initialize database. Server will start but may have limited functionality.');
+    }
     
     // Start the server
     server.listen(PORT, () => {
