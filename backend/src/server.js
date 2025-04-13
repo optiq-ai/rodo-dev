@@ -56,26 +56,26 @@ wss.on('connection', (ws) => {
   });
 });
 
-// CORS configuration - RELAXED FOR DEVELOPMENT
-// Allow all origins for temporary development purposes
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  credentials: true,
-  optionsSuccessStatus: 200
-}));
-
-// Add preflight OPTIONS handling for all routes
-app.options('*', cors());
-
-// Disable helmet for development to avoid security restrictions
-// app.use(helmet({...}));
-
-// Basic security headers without strict CSP
+// COMPLETELY DISABLE CORS - EMERGENCY ACCESS MODE
 app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
+  next();
+});
+
+// Disable all security restrictions
+app.use((req, res, next) => {
+  // Basic headers only
+  res.removeHeader('X-Content-Type-Options');
+  res.removeHeader('X-XSS-Protection');
   next();
 });
 
@@ -138,7 +138,7 @@ const startServer = async () => {
     server.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);
       logger.info(`WebSocket server is running on ws://localhost:${PORT}/ws`);
-      logger.info('NOTICE: Security restrictions have been relaxed for development purposes');
+      logger.info('⚠️ EMERGENCY MODE: CORS and security restrictions completely disabled ⚠️');
     });
   } catch (error) {
     logger.error('Failed to start server:', error);

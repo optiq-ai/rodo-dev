@@ -20,7 +20,7 @@ const api = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json'
   },
-  withCredentials: false // Disable credentials for cross-origin requests to avoid CORS preflight issues
+  withCredentials: false // Disable credentials for cross-origin requests
 });
 
 // Log API configuration for debugging
