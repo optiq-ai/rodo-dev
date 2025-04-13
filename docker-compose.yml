@@ -31,7 +31,7 @@ services:
     environment:
       NODE_ENV: development
       PORT: ${BACKEND_PORT}
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       JWT_SECRET: rodo_secret_key_change_in_production
       JWT_EXPIRATION: 3600
       CORS_ORIGIN: http://localhost:${FRONTEND_PORT}
@@ -41,14 +41,16 @@ services:
   frontend:
     build:
       context: .
+      args:
+        - REACT_APP_API_URL=http://localhost:${BACKEND_PORT}/api/v1
+        - REACT_APP_WS_URL=ws://localhost:${BACKEND_PORT}/ws
     container_name: rodo-frontend
     ports:
       - "${FRONTEND_PORT}:${FRONTEND_PORT}"
     depends_on:
       - backend
     environment:
-      REACT_APP_API_URL: http://localhost:${BACKEND_PORT}/api/v1
-      PORT: ${FRONTEND_PORT}
+      - FRONTEND_PORT=${FRONTEND_PORT}
     networks:
       - rodo-network
 
