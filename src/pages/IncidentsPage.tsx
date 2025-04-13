@@ -1,545 +1,548 @@
-// @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import { 
-  Box, 
+  Container, 
   Typography, 
+  Box, 
   Paper, 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableContainer, 
-  TableHead, 
-  TableRow,
-  Button,
-  TextField,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-  IconButton,
-  Chip,
-  Grid,
-  FormControl,
+  Grid, 
+  Button, 
+  TextField, 
+  MenuItem, 
+  Select, 
+  FormControl, 
   InputLabel,
-  Select,
-  MenuItem,
-  SelectChangeEvent,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TablePagination,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  CircularProgress,
   Alert
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
-import WarningIcon from '@mui/icons-material/Warning';
+import { Add, Edit, Delete, Visibility } from '@mui/icons-material';
 import { useAuth } from '../services/auth/AuthContext';
+import IncidentService from '../services/incident.service';
 
-// Typy danych dla incydentów
-interface Incident {
-  id: number;
-  title: string;
-  description: string;
-  date: string;
-  status: 'Nowy' | 'W trakcie' | 'Zamknięty';
-  severity: 'Niski' | 'Średni' | 'Wysoki' | 'Krytyczny';
-  reportedBy: string;
-  affectedData: string;
-  actions: string;
-}
-
-// Przykładowe dane incydentów
-const mockIncidents: Incident[] = [
-  {
-    id: 1,
-    title: 'Wyciek danych klientów',
-    description: 'Wykryto nieautoryzowany dostęp do bazy danych klientów. Potencjalnie ujawnione dane to: imiona, nazwiska, adresy email.',
-    date: '2025-04-10',
-    status: 'W trakcie',
-    severity: 'Wysoki',
-    reportedBy: 'Jan Kowalski',
-    affectedData: 'Dane osobowe klientów',
-    actions: 'Zablokowano dostęp do bazy danych, powiadomiono osoby, których dane dotyczą, zgłoszono do UODO.'
-  },
-  {
-    id: 2,
-    title: 'Utrata laptopa służbowego',
-    description: 'Pracownik zgubił laptop służbowy zawierający dane osobowe pracowników.',
-    date: '2025-04-05',
-    status: 'Zamknięty',
-    severity: 'Średni',
-    reportedBy: 'Anna Nowak',
-    affectedData: 'Dane osobowe pracowników',
-    actions: 'Zdalnie wymazano dane z laptopa, zmieniono hasła dostępowe, powiadomiono osoby, których dane dotyczą.'
-  },
-  {
-    id: 3,
-    title: 'Atak phishingowy',
-    description: 'Wykryto próbę ataku phishingowego na pracowników działu HR.',
-    date: '2025-04-12',
-    status: 'Nowy',
-    severity: 'Niski',
-    reportedBy: 'Piotr Wiśniewski',
-    affectedData: 'Brak naruszenia danych',
-    actions: 'Powiadomiono pracowników o zagrożeniu, przeprowadzono szkolenie z rozpoznawania ataków phishingowych.'
-  },
-  {
-    id: 4,
-    title: 'Błąd w systemie CRM',
-    description: 'Wykryto błąd w systemie CRM, który umożliwiał dostęp do danych klientów przez nieuprawnione osoby.',
-    date: '2025-03-28',
-    status: 'Zamknięty',
-    severity: 'Krytyczny',
-    reportedBy: 'Michał Dąbrowski',
-    affectedData: 'Dane osobowe i finansowe klientów',
-    actions: 'Naprawiono błąd, przeprowadzono audyt bezpieczeństwa, powiadomiono UODO i osoby, których dane dotyczą.'
-  },
-];
-
-const IncidentsPage: React.FC = () => {
-  const { user } = useAuth();
-  const [incidents, setIncidents] = useState<Incident[]>(mockIncidents);
-  const [filteredIncidents, setFilteredIncidents] = useState<Incident[]>(mockIncidents);
+const IncidentsPage = () => {
+  const { hasPermission } = useAuth();
+  
+  // State for incidents list
+  const [incidents, setIncidents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // State for pagination
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+  
+  // State for filters
+  const [statusFilter, setStatusFilter] = useState('');
+  const [severityFilter, setSeverityFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // State for incident dialog
   const [openDialog, setOpenDialog] = useState(false);
-  const [openDetailsDialog, setOpenDetailsDialog] = useState(false);
-  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [severityFilter, setSeverityFilter] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [newIncident, setNewIncident] = useState<Partial<Incident>>({
+  const [dialogMode, setDialogMode] = useState('create'); // 'create', 'edit', 'view'
+  const [currentIncident, setCurrentIncident] = useState({
     title: '',
     description: '',
-    severity: 'Średni',
+    severity: 'medium',
     affectedData: '',
-    actions: ''
+    actions: '',
+    notificationRequired: false
   });
-  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
-
-  // Filtrowanie incydentów
-  useEffect(() => {
-    let result = [...incidents];
+  
+  // Fetch incidents
+  const fetchIncidents = async () => {
+    setLoading(true);
+    setError(null);
     
-    if (statusFilter !== 'all') {
-      result = result.filter(incident => incident.status === statusFilter);
+    try {
+      const params = {
+        page: page + 1, // API uses 1-based pagination
+        limit: rowsPerPage,
+        status: statusFilter || undefined,
+        severity: severityFilter || undefined,
+        search: searchQuery || undefined
+      };
+      
+      const response = await IncidentService.getIncidents(params);
+      setIncidents(response.data);
+      setTotalCount(response.pagination.total);
+    } catch (err) {
+      console.error('Error fetching incidents:', err);
+      setError(err.error?.message || 'Failed to load incidents');
+    } finally {
+      setLoading(false);
     }
-    
-    if (severityFilter !== 'all') {
-      result = result.filter(incident => incident.severity === severityFilter);
-    }
-    
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      result = result.filter(incident => 
-        incident.title.toLowerCase().includes(term) || 
-        incident.description.toLowerCase().includes(term) ||
-        incident.affectedData.toLowerCase().includes(term)
-      );
-    }
-    
-    setFilteredIncidents(result);
-  }, [incidents, statusFilter, severityFilter, searchTerm]);
-
-  const handleOpenDialog = () => {
-    setOpenDialog(true);
   };
-
-  const handleCloseDialog = () => {
-    setOpenDialog(false);
-    setNewIncident({
+  
+  // Load incidents on initial render and when filters/pagination change
+  useEffect(() => {
+    fetchIncidents();
+  }, [page, rowsPerPage, statusFilter, severityFilter, searchQuery]);
+  
+  // Handle page change
+  const handleChangePage = (event, newPage) => {
+    setPage(newPage);
+  };
+  
+  // Handle rows per page change
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+  
+  // Open dialog for creating new incident
+  const handleCreateIncident = () => {
+    setCurrentIncident({
       title: '',
       description: '',
-      severity: 'Średni',
+      severity: 'medium',
       affectedData: '',
-      actions: ''
+      actions: '',
+      notificationRequired: false
+    });
+    setDialogMode('create');
+    setOpenDialog(true);
+  };
+  
+  // Open dialog for editing incident
+  const handleEditIncident = async (id) => {
+    try {
+      setLoading(true);
+      const incident = await IncidentService.getIncidentById(id);
+      setCurrentIncident(incident);
+      setDialogMode('edit');
+      setOpenDialog(true);
+    } catch (err) {
+      console.error('Error fetching incident details:', err);
+      setError(err.error?.message || 'Failed to load incident details');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Open dialog for viewing incident
+  const handleViewIncident = async (id) => {
+    try {
+      setLoading(true);
+      const incident = await IncidentService.getIncidentById(id);
+      setCurrentIncident(incident);
+      setDialogMode('view');
+      setOpenDialog(true);
+    } catch (err) {
+      console.error('Error fetching incident details:', err);
+      setError(err.error?.message || 'Failed to load incident details');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Handle incident deletion
+  const handleDeleteIncident = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this incident?')) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      await IncidentService.deleteIncident(id);
+      fetchIncidents();
+    } catch (err) {
+      console.error('Error deleting incident:', err);
+      setError(err.error?.message || 'Failed to delete incident');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Handle dialog close
+  const handleCloseDialog = () => {
+    setOpenDialog(false);
+  };
+  
+  // Handle form input change
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setCurrentIncident({
+      ...currentIncident,
+      [name]: type === 'checkbox' ? checked : value
     });
   };
-
-  const handleOpenDetailsDialog = (incident: Incident) => {
-    setSelectedIncident(incident);
-    setOpenDetailsDialog(true);
+  
+  // Handle form submission
+  const handleSubmitIncident = async (e) => {
+    e.preventDefault();
+    
+    try {
+      setLoading(true);
+      
+      if (dialogMode === 'create') {
+        await IncidentService.createIncident(currentIncident);
+      } else if (dialogMode === 'edit') {
+        await IncidentService.updateIncident(currentIncident.id, currentIncident);
+      }
+      
+      setOpenDialog(false);
+      fetchIncidents();
+    } catch (err) {
+      console.error('Error saving incident:', err);
+      setError(err.error?.message || 'Failed to save incident');
+    } finally {
+      setLoading(false);
+    }
   };
-
-  const handleCloseDetailsDialog = () => {
-    setOpenDetailsDialog(false);
-    setSelectedIncident(null);
-  };
-
-  const handleStatusFilterChange = (event: SelectChangeEvent) => {
-    setStatusFilter(event.target.value);
-  };
-
-  const handleSeverityFilterChange = (event: SelectChangeEvent) => {
-    setSeverityFilter(event.target.value);
-  };
-
-  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(event.target.value);
-  };
-
-  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = event.target;
-    setNewIncident(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleSeverityChange = (event: SelectChangeEvent) => {
-    setNewIncident(prev => ({ ...prev, severity: event.target.value as 'Niski' | 'Średni' | 'Wysoki' | 'Krytyczny' }));
-  };
-
-  const handleSubmitIncident = () => {
-    const newIncidentComplete: Incident = {
-      id: incidents.length + 1,
-      title: newIncident.title || '',
-      description: newIncident.description || '',
-      date: new Date().toISOString().split('T')[0],
-      status: 'Nowy',
-      severity: newIncident.severity as 'Niski' | 'Średni' | 'Wysoki' | 'Krytyczny',
-      reportedBy: user?.username || 'Nieznany',
-      affectedData: newIncident.affectedData || '',
-      actions: newIncident.actions || ''
+  
+  // Render severity badge
+  const renderSeverityBadge = (severity) => {
+    const colors = {
+      low: '#4caf50',
+      medium: '#ff9800',
+      high: '#f44336',
+      critical: '#9c27b0'
     };
     
-    setIncidents(prev => [newIncidentComplete, ...prev]);
-    handleCloseDialog();
-    setShowSuccessAlert(true);
-    
-    // Ukryj alert po 5 sekundach
-    setTimeout(() => {
-      setShowSuccessAlert(false);
-    }, 5000);
-  };
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'Niski':
-        return 'success';
-      case 'Średni':
-        return 'warning';
-      case 'Wysoki':
-        return 'error';
-      case 'Krytyczny':
-        return 'error';
-      default:
-        return 'default';
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Nowy':
-        return 'info';
-      case 'W trakcie':
-        return 'warning';
-      case 'Zamknięty':
-        return 'success';
-      default:
-        return 'default';
-    }
-  };
-
-  return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Incydenty i naruszenia
-      </Typography>
-      
-      {showSuccessAlert && (
-        <Alert severity="success" sx={{ mb: 3 }} onClose={() => setShowSuccessAlert(false)}>
-          Incydent został pomyślnie zgłoszony i zostanie rozpatrzony przez zespół bezpieczeństwa.
-        </Alert>
-      )}
-      
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <TextField
-            label="Wyszukaj"
-            variant="outlined"
-            size="small"
-            value={searchTerm}
-            onChange={handleSearchChange}
-            sx={{ minWidth: 200 }}
-          />
-          <FormControl sx={{ minWidth: 150 }} size="small">
-            <InputLabel id="status-filter-label">Status</InputLabel>
-            <Select
-              labelId="status-filter-label"
-              id="status-filter"
-              value={statusFilter}
-              label="Status"
-              onChange={handleStatusFilterChange}
-            >
-              <MenuItem value="all">Wszystkie</MenuItem>
-              <MenuItem value="Nowy">Nowe</MenuItem>
-              <MenuItem value="W trakcie">W trakcie</MenuItem>
-              <MenuItem value="Zamknięty">Zamknięte</MenuItem>
-            </Select>
-          </FormControl>
-          <FormControl sx={{ minWidth: 150 }} size="small">
-            <InputLabel id="severity-filter-label">Poziom ryzyka</InputLabel>
-            <Select
-              labelId="severity-filter-label"
-              id="severity-filter"
-              value={severityFilter}
-              label="Poziom ryzyka"
-              onChange={handleSeverityFilterChange}
-            >
-              <MenuItem value="all">Wszystkie</MenuItem>
-              <MenuItem value="Niski">Niski</MenuItem>
-              <MenuItem value="Średni">Średni</MenuItem>
-              <MenuItem value="Wysoki">Wysoki</MenuItem>
-              <MenuItem value="Krytyczny">Krytyczny</MenuItem>
-            </Select>
-          </FormControl>
-        </Box>
-        <Button 
-          variant="contained" 
-          startIcon={<AddIcon />}
-          onClick={handleOpenDialog}
-        >
-          Zgłoś incydent
-        </Button>
+    return (
+      <Box
+        sx={{
+          display: 'inline-block',
+          bgcolor: colors[severity] || colors.medium,
+          color: 'white',
+          borderRadius: 1,
+          px: 1,
+          py: 0.5,
+          fontSize: '0.75rem',
+          fontWeight: 'bold',
+          textTransform: 'uppercase'
+        }}
+      >
+        {severity}
       </Box>
-      
-      <TableContainer component={Paper}>
-        <Table sx={{ minWidth: 650 }} aria-label="incidents table">
-          <TableHead>
-            <TableRow>
-              <TableCell>Tytuł</TableCell>
-              <TableCell>Data</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Poziom ryzyka</TableCell>
-              <TableCell>Zgłaszający</TableCell>
-              <TableCell>Akcje</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredIncidents.length > 0 ? (
-              filteredIncidents.map((incident) => (
-                <TableRow key={incident.id}>
-                  <TableCell component="th" scope="row">
-                    {incident.title}
-                  </TableCell>
-                  <TableCell>{incident.date}</TableCell>
-                  <TableCell>
-                    <Chip 
-                      label={incident.status} 
-                      color={getStatusColor(incident.status)} 
-                      size="small" 
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      {(incident.severity === 'Wysoki' || incident.severity === 'Krytyczny') && (
-                        <WarningIcon fontSize="small" color="error" sx={{ mr: 0.5 }} />
-                      )}
-                      <Chip 
-                        label={incident.severity} 
-                        color={getSeverityColor(incident.severity)} 
-                        size="small" 
-                      />
-                    </Box>
-                  </TableCell>
-                  <TableCell>{incident.reportedBy}</TableCell>
-                  <TableCell>
-                    <IconButton 
-                      size="small" 
-                      color="primary"
-                      onClick={() => handleOpenDetailsDialog(incident)}
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" color="error">
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={6} align="center">
-                  Nie znaleziono incydentów spełniających kryteria wyszukiwania
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-      
-      {/* Dialog do zgłaszania incydentu */}
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
-        <DialogTitle>Zgłoś nowy incydent</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Wprowadź informacje o incydencie lub naruszeniu bezpieczeństwa danych.
-          </DialogContentText>
-          <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid item xs={12}>
+    );
+  };
+  
+  // Render status badge
+  const renderStatusBadge = (status) => {
+    const colors = {
+      new: '#2196f3',
+      in_progress: '#ff9800',
+      closed: '#4caf50'
+    };
+    
+    return (
+      <Box
+        sx={{
+          display: 'inline-block',
+          bgcolor: colors[status] || colors.new,
+          color: 'white',
+          borderRadius: 1,
+          px: 1,
+          py: 0.5,
+          fontSize: '0.75rem',
+          fontWeight: 'bold',
+          textTransform: 'uppercase'
+        }}
+      >
+        {status === 'in_progress' ? 'In Progress' : status}
+      </Box>
+    );
+  };
+  
+  return (
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      <Paper sx={{ p: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h5" component="h1">
+            Incidents and Breaches
+          </Typography>
+          
+          {hasPermission('incidents', 'create') && (
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<Add />}
+              onClick={handleCreateIncident}
+            >
+              Report Incident
+            </Button>
+          )}
+        </Box>
+        
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            {error}
+          </Alert>
+        )}
+        
+        <Box sx={{ mb: 3 }}>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={4}>
               <TextField
-                autoFocus
-                required
-                margin="dense"
-                id="title"
-                name="title"
-                label="Tytuł incydentu"
-                type="text"
                 fullWidth
+                label="Search"
                 variant="outlined"
-                value={newIncident.title}
-                onChange={handleInputChange}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by title or description"
               />
             </Grid>
-            <Grid item xs={12}>
-              <TextField
-                required
-                margin="dense"
-                id="description"
-                name="description"
-                label="Opis incydentu"
-                type="text"
-                fullWidth
-                variant="outlined"
-                multiline
-                rows={4}
-                value={newIncident.description}
-                onChange={handleInputChange}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth margin="dense">
-                <InputLabel id="severity-label">Poziom ryzyka</InputLabel>
+            
+            <Grid item xs={12} sm={4}>
+              <FormControl fullWidth variant="outlined">
+                <InputLabel>Status</InputLabel>
                 <Select
-                  labelId="severity-label"
-                  id="severity"
-                  value={newIncident.severity}
-                  label="Poziom ryzyka"
-                  onChange={handleSeverityChange}
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  label="Status"
                 >
-                  <MenuItem value="Niski">Niski</MenuItem>
-                  <MenuItem value="Średni">Średni</MenuItem>
-                  <MenuItem value="Wysoki">Wysoki</MenuItem>
-                  <MenuItem value="Krytyczny">Krytyczny</MenuItem>
+                  <MenuItem value="">All</MenuItem>
+                  <MenuItem value="new">New</MenuItem>
+                  <MenuItem value="in_progress">In Progress</MenuItem>
+                  <MenuItem value="closed">Closed</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                margin="dense"
-                id="affectedData"
-                name="affectedData"
-                label="Jakie dane zostały naruszone"
-                type="text"
-                fullWidth
-                variant="outlined"
-                value={newIncident.affectedData}
-                onChange={handleInputChange}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                margin="dense"
-                id="actions"
-                name="actions"
-                label="Podjęte działania"
-                type="text"
-                fullWidth
-                variant="outlined"
-                multiline
-                rows={2}
-                value={newIncident.actions}
-                onChange={handleInputChange}
-              />
+            
+            <Grid item xs={12} sm={4}>
+              <FormControl fullWidth variant="outlined">
+                <InputLabel>Severity</InputLabel>
+                <Select
+                  value={severityFilter}
+                  onChange={(e) => setSeverityFilter(e.target.value)}
+                  label="Severity"
+                >
+                  <MenuItem value="">All</MenuItem>
+                  <MenuItem value="low">Low</MenuItem>
+                  <MenuItem value="medium">Medium</MenuItem>
+                  <MenuItem value="high">High</MenuItem>
+                  <MenuItem value="critical">Critical</MenuItem>
+                </Select>
+              </FormControl>
             </Grid>
           </Grid>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Anuluj</Button>
-          <Button 
-            onClick={handleSubmitIncident} 
-            variant="contained"
-            disabled={!newIncident.title || !newIncident.description}
-          >
-            Zgłoś
-          </Button>
-        </DialogActions>
-      </Dialog>
-      
-      {/* Dialog ze szczegółami incydentu */}
-      <Dialog open={openDetailsDialog} onClose={handleCloseDetailsDialog} maxWidth="md" fullWidth>
-        {selectedIncident && (
+        </Box>
+        
+        {loading && incidents.length === 0 ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
           <>
-            <DialogTitle>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                {selectedIncident.title}
-                <Chip 
-                  label={selectedIncident.severity} 
-                  color={getSeverityColor(selectedIncident.severity)} 
-                  size="small" 
-                />
-              </Box>
-            </DialogTitle>
-            <DialogContent>
-              <Grid container spacing={2}>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Data zgłoszenia
-                  </Typography>
-                  <Typography variant="body1" gutterBottom>
-                    {selectedIncident.date}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Status
-                  </Typography>
-                  <Chip 
-                    label={selectedIncident.status} 
-                    color={getStatusColor(selectedIncident.status)} 
-                    size="small" 
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Zgłaszający
-                  </Typography>
-                  <Typography variant="body1" gutterBottom>
-                    {selectedIncident.reportedBy}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Naruszone dane
-                  </Typography>
-                  <Typography variant="body1" gutterBottom>
-                    {selectedIncident.affectedData}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12}>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Opis incydentu
-                  </Typography>
-                  <Typography variant="body1" paragraph>
-                    {selectedIncident.description}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12}>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Podjęte działania
-                  </Typography>
-                  <Typography variant="body1">
-                    {selectedIncident.actions}
-                  </Typography>
-                </Grid>
-              </Grid>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={handleCloseDetailsDialog}>Zamknij</Button>
-              {selectedIncident.status !== 'Zamknięty' && (
-                <Button variant="contained" color="primary">
-                  Aktualizuj status
-                </Button>
-              )}
-            </DialogActions>
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Title</TableCell>
+                    <TableCell>Date</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Severity</TableCell>
+                    <TableCell>Reported By</TableCell>
+                    <TableCell align="right">Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {incidents.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} align="center">
+                        No incidents found
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    incidents.map((incident) => (
+                      <TableRow key={incident.id}>
+                        <TableCell>{incident.title}</TableCell>
+                        <TableCell>
+                          {new Date(incident.date).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>
+                          {renderStatusBadge(incident.status)}
+                        </TableCell>
+                        <TableCell>
+                          {renderSeverityBadge(incident.severity)}
+                        </TableCell>
+                        <TableCell>
+                          {incident.Reporter?.username || incident.reportedBy}
+                        </TableCell>
+                        <TableCell align="right">
+                          <IconButton
+                            color="primary"
+                            onClick={() => handleViewIncident(incident.id)}
+                          >
+                            <Visibility />
+                          </IconButton>
+                          
+                          {hasPermission('incidents', 'update') && (
+                            <IconButton
+                              color="secondary"
+                              onClick={() => handleEditIncident(incident.id)}
+                            >
+                              <Edit />
+                            </IconButton>
+                          )}
+                          
+                          {hasPermission('incidents', 'delete') && (
+                            <IconButton
+                              color="error"
+                              onClick={() => handleDeleteIncident(incident.id)}
+                            >
+                              <Delete />
+                            </IconButton>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            
+            <TablePagination
+              rowsPerPageOptions={[5, 10, 25]}
+              component="div"
+              count={totalCount}
+              rowsPerPage={rowsPerPage}
+              page={page}
+              onPageChange={handleChangePage}
+              onRowsPerPageChange={handleChangeRowsPerPage}
+            />
           </>
         )}
+      </Paper>
+      
+      {/* Incident Dialog */}
+      <Dialog
+        open={openDialog}
+        onClose={handleCloseDialog}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          {dialogMode === 'create' ? 'Report New Incident' : 
+           dialogMode === 'edit' ? 'Edit Incident' : 'Incident Details'}
+        </DialogTitle>
+        
+        <form onSubmit={handleSubmitIncident}>
+          <DialogContent>
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Title"
+                  name="title"
+                  value={currentIncident.title}
+                  onChange={handleInputChange}
+                  required
+                  disabled={dialogMode === 'view'}
+                />
+              </Grid>
+              
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Description"
+                  name="description"
+                  value={currentIncident.description}
+                  onChange={handleInputChange}
+                  multiline
+                  rows={4}
+                  required
+                  disabled={dialogMode === 'view'}
+                />
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Severity</InputLabel>
+                  <Select
+                    name="severity"
+                    value={currentIncident.severity}
+                    onChange={handleInputChange}
+                    label="Severity"
+                    disabled={dialogMode === 'view'}
+                  >
+                    <MenuItem value="low">Low</MenuItem>
+                    <MenuItem value="medium">Medium</MenuItem>
+                    <MenuItem value="high">High</MenuItem>
+                    <MenuItem value="critical">Critical</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              
+              {dialogMode === 'edit' && (
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Status</InputLabel>
+                    <Select
+                      name="status"
+                      value={currentIncident.status}
+                      onChange={handleInputChange}
+                      label="Status"
+                      disabled={dialogMode === 'view'}
+                    >
+                      <MenuItem value="new">New</MenuItem>
+                      <MenuItem value="in_progress">In Progress</MenuItem>
+                      <MenuItem value="closed">Closed</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+              )}
+              
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Affected Data"
+                  name="affectedData"
+                  value={currentIncident.affectedData}
+                  onChange={handleInputChange}
+                  multiline
+                  rows={2}
+                  disabled={dialogMode === 'view'}
+                />
+              </Grid>
+              
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Actions Taken"
+                  name="actions"
+                  value={currentIncident.actions}
+                  onChange={handleInputChange}
+                  multiline
+                  rows={2}
+                  disabled={dialogMode === 'view'}
+                />
+              </Grid>
+            </Grid>
+          </DialogContent>
+          
+          <DialogActions>
+            <Button onClick={handleCloseDialog}>
+              {dialogMode === 'view' ? 'Close' : 'Cancel'}
+            </Button>
+            
+            {dialogMode !== 'view' && (
+              <Button
+                type="submit"
+                variant="contained"
+                color="primary"
+                disabled={loading}
+              >
+                {loading ? <CircularProgress size={24} /> : 'Save'}
+              </Button>
+            )}
+          </DialogActions>
+        </form>
       </Dialog>
-    </Box>
+    </Container>
   );
 };
 

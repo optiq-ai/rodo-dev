@@ -7,6 +7,7 @@ const dotenv = require('dotenv');
 const http = require('http');
 const WebSocket = require('ws');
 const { connectToDatabase } = require('./config/database');
+const { createDefaultUsers } = require('./config/seedData');
 const logger = require('./utils/logger');
 const routes = require('./routes');
 
@@ -130,10 +131,14 @@ const startServer = async () => {
       process.exit(1);
     }
     
+    // Initialize database with default users
+    await createDefaultUsers();
+    logger.info('Database initialization completed');
+    
     // Start the server
     server.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);
-      logger.info(`WebSocket server is running on ws://localhost:${PORT}`);
+      logger.info(`WebSocket server is running on ws://localhost:${PORT}/ws`);
     });
   } catch (error) {
     logger.error('Failed to start server:', error);

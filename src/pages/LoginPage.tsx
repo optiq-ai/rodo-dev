@@ -1,103 +1,105 @@
-// @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import { 
-  Box, 
+  Container, 
   Typography, 
-  Paper, 
+  Box, 
   TextField, 
   Button, 
-  Container,
-  Avatar,
-  Grid,
-  Link,
-  Snackbar,
-  Alert,
-  FormHelperText,
+  Grid, 
+  Paper, 
+  CircularProgress,
+  FormControl,
+  InputLabel,
+  OutlinedInput,
   InputAdornment,
   IconButton,
-  CircularProgress
+  FormHelperText
 } from '@mui/material';
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import { useAuth } from '../services/auth/AuthContext';
+import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { validatePassword, sanitizeInput } from '../utils/securityUtils';
+import { useAuth } from '../services/auth/AuthContext';
 
-const LoginPage: React.FC = () => {
+const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [openSnackbar, setOpenSnackbar] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [passwordStrength, setPasswordStrength] = useState<{
-    isValid: boolean;
-    strength: 'weak' | 'medium' | 'strong';
-    message: string;
-  } | null>(null);
+  const [errors, setErrors] = useState({});
+  const [passwordStrength, setPasswordStrength] = useState(0);
   
-  const { login } = useAuth();
+  const { login, isAuthenticated, loading, error } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-
-  // Sprawdzenie, czy użytkownik został przekierowany z innej strony
-  const from = location.state?.from?.pathname || '/';
-
-  // Sprawdzanie siły hasła
+  
+  // Redirect if already authenticated
   useEffect(() => {
-    if (password) {
-      setPasswordStrength(validatePassword(password));
-    } else {
-      setPasswordStrength(null);
+    if (isAuthenticated) {
+      const from = location.state?.from?.pathname || '/dashboard';
+      navigate(from, { replace: true });
     }
-  }, [password]);
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setError('');
-    setIsLoading(true);
-
-    if (!username || !password) {
-      setError('Proszę wprowadzić nazwę użytkownika i hasło');
-      setIsLoading(false);
+  }, [isAuthenticated, navigate, location]);
+  
+  // Password strength checker
+  useEffect(() => {
+    if (!password) {
+      setPasswordStrength(0);
       return;
     }
-
-    // Sanityzacja danych wejściowych
-    const sanitizedUsername = sanitizeInput(username);
-
-    try {
-      // Symulacja opóźnienia sieciowego dla bezpieczeństwa
-      // W rzeczywistej aplikacji to byłoby rzeczywiste opóźnienie zapytania do API
-      setTimeout(async () => {
-        const success = await login(sanitizedUsername, password);
-        if (success) {
-          setOpenSnackbar(true);
-          // Przekierowanie do strony, z której użytkownik przyszedł, lub do dashboardu
-          setTimeout(() => {
-            navigate(from, { replace: true });
-          }, 1500);
-        } else {
-          setError('Nieprawidłowa nazwa użytkownika lub hasło');
-        }
-        setIsLoading(false);
-      }, 1000);
-    } catch (err) {
-      setError('Wystąpił błąd podczas logowania. Spróbuj ponownie.');
-      console.error('Login error:', err);
-      setIsLoading(false);
-    }
-  };
-
-  const handleCloseSnackbar = () => {
-    setOpenSnackbar(false);
-  };
-
-  const toggleShowPassword = () => {
+    
+    let strength = 0;
+    if (password.length >= 8) strength += 1;
+    if (/[A-Z]/.test(password)) strength += 1;
+    if (/[a-z]/.test(password)) strength += 1;
+    if (/[0-9]/.test(password)) strength += 1;
+    if (/[^A-Za-z0-9]/.test(password)) strength += 1;
+    
+    setPasswordStrength(strength);
+  }, [password]);
+  
+  const handleClickShowPassword = () => {
     setShowPassword(!showPassword);
   };
-
+  
+  const handleMouseDownPassword = (event) => {
+    event.preventDefault();
+  };
+  
+  const validateForm = () => {
+    const newErrors = {};
+    
+    if (!username) newErrors.username = 'Username is required';
+    if (!password) newErrors.password = 'Password is required';
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+  
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!validateForm()) return;
+    
+    try {
+      await login(username, password);
+      // Redirect will happen in useEffect
+    } catch (err) {
+      console.error('Login error:', err);
+      // Error is handled by AuthContext
+    }
+  };
+  
+  const getPasswordStrengthColor = () => {
+    if (passwordStrength <= 1) return 'error';
+    if (passwordStrength <= 3) return 'warning';
+    return 'success';
+  };
+  
+  const getPasswordStrengthLabel = () => {
+    if (!password) return '';
+    if (passwordStrength <= 1) return 'Weak';
+    if (passwordStrength <= 3) return 'Medium';
+    return 'Strong';
+  };
+  
   return (
     <Container component="main" maxWidth="xs">
       <Box
@@ -108,109 +110,96 @@ const LoginPage: React.FC = () => {
           alignItems: 'center',
         }}
       >
-        <Avatar sx={{ m: 1, bgcolor: 'primary.main' }}>
-          <LockOutlinedIcon />
-        </Avatar>
-        <Typography component="h1" variant="h5">
-          Logowanie do aplikacji RODO
-        </Typography>
-        <Paper elevation={3} sx={{ p: 4, mt: 3, width: '100%' }}>
-          <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 1 }}>
+        <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
+          <Typography component="h1" variant="h5" align="center" gutterBottom>
+            RODO Application Login
+          </Typography>
+          
+          {error && (
+            <Box sx={{ mt: 2, mb: 2 }}>
+              <Typography color="error" align="center">
+                {error}
+              </Typography>
+            </Box>
+          )}
+          
+          <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1 }}>
             <TextField
               margin="normal"
               required
               fullWidth
               id="username"
-              label="Nazwa użytkownika"
+              label="Username"
               name="username"
               autoComplete="username"
               autoFocus
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              error={!!error}
-              disabled={isLoading}
-              inputProps={{
-                maxLength: 50, // Ograniczenie długości dla bezpieczeństwa
-              }}
+              error={!!errors.username}
+              helperText={errors.username}
+              disabled={loading}
             />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              name="password"
-              label="Hasło"
-              type={showPassword ? 'text' : 'password'}
-              id="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              error={!!error}
-              disabled={isLoading}
-              InputProps={{
-                endAdornment: (
+            
+            <FormControl variant="outlined" fullWidth margin="normal" error={!!errors.password}>
+              <InputLabel htmlFor="password">Password *</InputLabel>
+              <OutlinedInput
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                endAdornment={
                   <InputAdornment position="end">
                     <IconButton
                       aria-label="toggle password visibility"
-                      onClick={toggleShowPassword}
+                      onClick={handleClickShowPassword}
+                      onMouseDown={handleMouseDownPassword}
                       edge="end"
                     >
-                      {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
                   </InputAdornment>
-                ),
-              }}
-            />
-            {passwordStrength && password && (
-              <FormHelperText
-                error={!passwordStrength.isValid}
-                sx={{
-                  color: 
-                    passwordStrength.strength === 'strong' ? 'success.main' :
-                    passwordStrength.strength === 'medium' ? 'warning.main' : 'error.main'
-                }}
-              >
-                {passwordStrength.message}
-              </FormHelperText>
+                }
+                label="Password"
+                disabled={loading}
+              />
+              {errors.password && <FormHelperText>{errors.password}</FormHelperText>}
+            </FormControl>
+            
+            {password && (
+              <Box sx={{ mt: 1, mb: 2 }}>
+                <Grid container spacing={1} alignItems="center">
+                  <Grid item xs={3}>
+                    <Typography variant="body2">
+                      {getPasswordStrengthLabel()}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={9}>
+                    <Box sx={{ width: '100%', bgcolor: 'background.paper' }}>
+                      <Box
+                        sx={{
+                          width: `${passwordStrength * 20}%`,
+                          height: 4,
+                          bgcolor: `${getPasswordStrengthColor()}.main`,
+                        }}
+                      />
+                    </Box>
+                  </Grid>
+                </Grid>
+              </Box>
             )}
-            {error && (
-              <FormHelperText error>
-                {error}
-              </FormHelperText>
-            )}
+            
             <Button
               type="submit"
               fullWidth
               variant="contained"
               sx={{ mt: 3, mb: 2 }}
-              disabled={isLoading}
+              disabled={loading}
             >
-              {isLoading ? <CircularProgress size={24} /> : 'Zaloguj się'}
+              {loading ? <CircularProgress size={24} /> : 'Sign In'}
             </Button>
-            <Grid container>
-              <Grid item xs>
-                <Link href="#" variant="body2">
-                  Zapomniałeś hasła?
-                </Link>
-              </Grid>
-              <Grid item>
-                <Link href="#" variant="body2">
-                  {"Skontaktuj się z administratorem"}
-                </Link>
-              </Grid>
-            </Grid>
           </Box>
         </Paper>
       </Box>
-      <Box sx={{ mt: 8, textAlign: 'center' }}>
-        <Typography variant="body2" color="text.secondary">
-          Aplikacja RODO - Kompleksowe zarządzanie ochroną danych osobowych
-        </Typography>
-      </Box>
-      <Snackbar open={openSnackbar} autoHideDuration={3000} onClose={handleCloseSnackbar}>
-        <Alert onClose={handleCloseSnackbar} severity="success" sx={{ width: '100%' }}>
-          Logowanie pomyślne! Przekierowywanie...
-        </Alert>
-      </Snackbar>
     </Container>
   );
 };

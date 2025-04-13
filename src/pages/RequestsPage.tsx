@@ -1,668 +1,541 @@
-// @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import { 
-  Box, 
+  Container, 
   Typography, 
+  Box, 
   Paper, 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableContainer, 
-  TableHead, 
-  TableRow,
-  Button,
-  TextField,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-  IconButton,
-  Chip,
-  Grid,
-  FormControl,
+  Grid, 
+  Button, 
+  TextField, 
+  MenuItem, 
+  Select, 
+  FormControl, 
   InputLabel,
-  Select,
-  MenuItem,
-  SelectChangeEvent,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TablePagination,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  CircularProgress,
   Alert,
-  Stepper,
-  Step,
-  StepLabel
+  FormControlLabel,
+  Checkbox
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import PersonIcon from '@mui/icons-material/Person';
+import { Add, Edit, Delete, Visibility } from '@mui/icons-material';
 import { useAuth } from '../services/auth/AuthContext';
+import RequestService from '../services/request.service';
 
-// Typy danych dla wniosków
-interface Request {
-  id: number;
-  type: 'access' | 'rectification' | 'erasure' | 'restriction' | 'portability' | 'objection';
-  typeName: string;
-  status: 'Nowy' | 'W trakcie' | 'Zakończony' | 'Odrzucony';
-  submissionDate: string;
-  deadlineDate: string;
-  dataSubject: string;
-  contactInfo: string;
-  description: string;
-  assignedTo: string;
-  notes: string;
-}
-
-// Przykładowe dane wniosków
-const mockRequests: Request[] = [
-  {
-    id: 1,
-    type: 'access',
-    typeName: 'Dostęp do danych',
-    status: 'W trakcie',
-    submissionDate: '2025-04-05',
-    deadlineDate: '2025-05-05',
-    dataSubject: 'Jan Kowalski',
-    contactInfo: 'jan.kowalski@example.com',
-    description: 'Prośba o dostęp do wszystkich danych osobowych przetwarzanych przez firmę.',
-    assignedTo: 'Anna Nowak',
-    notes: 'Dane z systemów HR i CRM zostały już zebrane. Oczekiwanie na dane z systemu marketingowego.'
-  },
-  {
-    id: 2,
-    type: 'erasure',
-    typeName: 'Usunięcie danych',
-    status: 'Nowy',
-    submissionDate: '2025-04-10',
-    deadlineDate: '2025-05-10',
-    dataSubject: 'Maria Wiśniewska',
-    contactInfo: 'maria.wisniewska@example.com',
-    description: 'Żądanie usunięcia wszystkich danych osobowych z systemów firmy.',
-    assignedTo: '',
-    notes: ''
-  },
-  {
-    id: 3,
-    type: 'rectification',
-    typeName: 'Sprostowanie danych',
-    status: 'Zakończony',
-    submissionDate: '2025-03-15',
-    deadlineDate: '2025-04-15',
-    dataSubject: 'Piotr Nowicki',
-    contactInfo: 'piotr.nowicki@example.com',
-    description: 'Prośba o poprawienie błędnego adresu zamieszkania w systemie.',
-    assignedTo: 'Michał Kowalczyk',
-    notes: 'Dane zostały poprawione w systemie CRM i HR. Potwierdzenie wysłane do klienta.'
-  },
-  {
-    id: 4,
-    type: 'portability',
-    typeName: 'Przeniesienie danych',
-    status: 'Odrzucony',
-    submissionDate: '2025-03-28',
-    deadlineDate: '2025-04-28',
-    dataSubject: 'Katarzyna Lewandowska',
-    contactInfo: 'katarzyna.lewandowska@example.com',
-    description: 'Prośba o przeniesienie danych do konkurencyjnej firmy.',
-    assignedTo: 'Tomasz Wójcik',
-    notes: 'Wniosek odrzucony ze względu na brak możliwości technicznych przeniesienia danych w żądanym formacie.'
-  },
-];
-
-const RequestsPage: React.FC = () => {
-  const { user } = useAuth();
-  const [requests, setRequests] = useState<Request[]>(mockRequests);
-  const [filteredRequests, setFilteredRequests] = useState<Request[]>(mockRequests);
+const RequestsPage = () => {
+  const { hasPermission } = useAuth();
+  
+  // State for requests list
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // State for pagination
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+  
+  // State for filters
+  const [statusFilter, setStatusFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // State for request dialog
   const [openDialog, setOpenDialog] = useState(false);
-  const [openDetailsDialog, setOpenDetailsDialog] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [activeStep, setActiveStep] = useState(0);
-  const [newRequest, setNewRequest] = useState<Partial<Request>>({
+  const [dialogMode, setDialogMode] = useState('create'); // 'create', 'edit', 'view'
+  const [currentRequest, setCurrentRequest] = useState({
     type: 'access',
-    typeName: 'Dostęp do danych',
     dataSubject: '',
     contactInfo: '',
     description: ''
   });
-  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
-
-  // Kroki formularza
-  const steps = ['Dane wnioskodawcy', 'Typ wniosku', 'Szczegóły wniosku', 'Podsumowanie'];
-
-  // Filtrowanie wniosków
-  useEffect(() => {
-    let result = [...requests];
+  
+  // Fetch requests
+  const fetchRequests = async () => {
+    setLoading(true);
+    setError(null);
     
-    if (statusFilter !== 'all') {
-      result = result.filter(request => request.status === statusFilter);
+    try {
+      const params = {
+        page: page + 1, // API uses 1-based pagination
+        limit: rowsPerPage,
+        status: statusFilter || undefined,
+        type: typeFilter || undefined,
+        search: searchQuery || undefined
+      };
+      
+      const response = await RequestService.getRequests(params);
+      setRequests(response.data);
+      setTotalCount(response.pagination.total);
+    } catch (err) {
+      console.error('Error fetching requests:', err);
+      setError(err.error?.message || 'Failed to load requests');
+    } finally {
+      setLoading(false);
     }
-    
-    if (typeFilter !== 'all') {
-      result = result.filter(request => request.type === typeFilter);
-    }
-    
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      result = result.filter(request => 
-        request.dataSubject.toLowerCase().includes(term) || 
-        request.description.toLowerCase().includes(term) ||
-        request.contactInfo.toLowerCase().includes(term)
-      );
-    }
-    
-    setFilteredRequests(result);
-  }, [requests, statusFilter, typeFilter, searchTerm]);
-
-  const handleOpenDialog = () => {
-    setOpenDialog(true);
-    setActiveStep(0);
   };
-
-  const handleCloseDialog = () => {
-    setOpenDialog(false);
-    setNewRequest({
+  
+  // Load requests on initial render and when filters/pagination change
+  useEffect(() => {
+    fetchRequests();
+  }, [page, rowsPerPage, statusFilter, typeFilter, searchQuery]);
+  
+  // Handle page change
+  const handleChangePage = (event, newPage) => {
+    setPage(newPage);
+  };
+  
+  // Handle rows per page change
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+  
+  // Open dialog for creating new request
+  const handleCreateRequest = () => {
+    setCurrentRequest({
       type: 'access',
-      typeName: 'Dostęp do danych',
       dataSubject: '',
       contactInfo: '',
       description: ''
     });
-    setActiveStep(0);
+    setDialogMode('create');
+    setOpenDialog(true);
   };
-
-  const handleOpenDetailsDialog = (request: Request) => {
-    setSelectedRequest(request);
-    setOpenDetailsDialog(true);
+  
+  // Open dialog for editing request
+  const handleEditRequest = async (id) => {
+    try {
+      setLoading(true);
+      const request = await RequestService.getRequestById(id);
+      setCurrentRequest(request);
+      setDialogMode('edit');
+      setOpenDialog(true);
+    } catch (err) {
+      console.error('Error fetching request details:', err);
+      setError(err.error?.message || 'Failed to load request details');
+    } finally {
+      setLoading(false);
+    }
   };
-
-  const handleCloseDetailsDialog = () => {
-    setOpenDetailsDialog(false);
-    setSelectedRequest(null);
+  
+  // Open dialog for viewing request
+  const handleViewRequest = async (id) => {
+    try {
+      setLoading(true);
+      const request = await RequestService.getRequestById(id);
+      setCurrentRequest(request);
+      setDialogMode('view');
+      setOpenDialog(true);
+    } catch (err) {
+      console.error('Error fetching request details:', err);
+      setError(err.error?.message || 'Failed to load request details');
+    } finally {
+      setLoading(false);
+    }
   };
-
-  const handleStatusFilterChange = (event: SelectChangeEvent) => {
-    setStatusFilter(event.target.value);
-  };
-
-  const handleTypeFilterChange = (event: SelectChangeEvent) => {
-    setTypeFilter(event.target.value);
-  };
-
-  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(event.target.value);
-  };
-
-  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = event.target;
-    setNewRequest(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleTypeChange = (event: SelectChangeEvent) => {
-    const type = event.target.value as Request['type'];
-    let typeName = '';
-    
-    switch (type) {
-      case 'access':
-        typeName = 'Dostęp do danych';
-        break;
-      case 'rectification':
-        typeName = 'Sprostowanie danych';
-        break;
-      case 'erasure':
-        typeName = 'Usunięcie danych';
-        break;
-      case 'restriction':
-        typeName = 'Ograniczenie przetwarzania';
-        break;
-      case 'portability':
-        typeName = 'Przeniesienie danych';
-        break;
-      case 'objection':
-        typeName = 'Sprzeciw wobec przetwarzania';
-        break;
+  
+  // Handle request deletion
+  const handleDeleteRequest = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this request?')) {
+      return;
     }
     
-    setNewRequest(prev => ({ ...prev, type, typeName }));
+    try {
+      setLoading(true);
+      await RequestService.deleteRequest(id);
+      fetchRequests();
+    } catch (err) {
+      console.error('Error deleting request:', err);
+      setError(err.error?.message || 'Failed to delete request');
+    } finally {
+      setLoading(false);
+    }
   };
-
-  const handleNext = () => {
-    setActiveStep((prevActiveStep) => prevActiveStep + 1);
+  
+  // Handle dialog close
+  const handleCloseDialog = () => {
+    setOpenDialog(false);
   };
-
-  const handleBack = () => {
-    setActiveStep((prevActiveStep) => prevActiveStep - 1);
+  
+  // Handle form input change
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setCurrentRequest({
+      ...currentRequest,
+      [name]: value
+    });
   };
-
-  const handleSubmitRequest = () => {
-    const today = new Date();
-    const deadline = new Date();
-    deadline.setDate(today.getDate() + 30); // 30 dni na odpowiedź
+  
+  // Handle form submission
+  const handleSubmitRequest = async (e) => {
+    e.preventDefault();
     
-    const newRequestComplete: Request = {
-      id: requests.length + 1,
-      type: newRequest.type as Request['type'],
-      typeName: newRequest.typeName as string,
-      status: 'Nowy',
-      submissionDate: today.toISOString().split('T')[0],
-      deadlineDate: deadline.toISOString().split('T')[0],
-      dataSubject: newRequest.dataSubject as string,
-      contactInfo: newRequest.contactInfo as string,
-      description: newRequest.description as string,
-      assignedTo: '',
-      notes: ''
+    try {
+      setLoading(true);
+      
+      if (dialogMode === 'create') {
+        await RequestService.createRequest(currentRequest);
+      } else if (dialogMode === 'edit') {
+        await RequestService.updateRequest(currentRequest.id, currentRequest);
+      }
+      
+      setOpenDialog(false);
+      fetchRequests();
+    } catch (err) {
+      console.error('Error saving request:', err);
+      setError(err.error?.message || 'Failed to save request');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Render status badge
+  const renderStatusBadge = (status) => {
+    const colors = {
+      new: '#2196f3',
+      in_progress: '#ff9800',
+      completed: '#4caf50',
+      rejected: '#f44336'
     };
     
-    setRequests(prev => [newRequestComplete, ...prev]);
-    handleCloseDialog();
-    setShowSuccessAlert(true);
+    return (
+      <Box
+        sx={{
+          display: 'inline-block',
+          bgcolor: colors[status] || colors.new,
+          color: 'white',
+          borderRadius: 1,
+          px: 1,
+          py: 0.5,
+          fontSize: '0.75rem',
+          fontWeight: 'bold',
+          textTransform: 'uppercase'
+        }}
+      >
+        {status === 'in_progress' ? 'In Progress' : status}
+      </Box>
+    );
+  };
+  
+  // Get request type name
+  const getRequestTypeName = (type) => {
+    const typeNames = {
+      'access': 'Access to Data',
+      'rectification': 'Data Rectification',
+      'erasure': 'Data Erasure',
+      'restriction': 'Processing Restriction',
+      'portability': 'Data Portability',
+      'objection': 'Processing Objection'
+    };
     
-    // Ukryj alert po 5 sekundach
-    setTimeout(() => {
-      setShowSuccessAlert(false);
-    }, 5000);
+    return typeNames[type] || type;
   };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Nowy':
-        return 'info';
-      case 'W trakcie':
-        return 'warning';
-      case 'Zakończony':
-        return 'success';
-      case 'Odrzucony':
-        return 'error';
-      default:
-        return 'default';
-    }
-  };
-
-  // Renderowanie kroku formularza
-  const getStepContent = (step: number) => {
-    switch (step) {
-      case 0:
-        return (
+  
+  return (
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      <Paper sx={{ p: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h5" component="h1">
+            Data Subject Requests
+          </Typography>
+          
+          {hasPermission('requests', 'create') && (
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<Add />}
+              onClick={handleCreateRequest}
+            >
+              New Request
+            </Button>
+          )}
+        </Box>
+        
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            {error}
+          </Alert>
+        )}
+        
+        <Box sx={{ mb: 3 }}>
           <Grid container spacing={2}>
-            <Grid item xs={12}>
+            <Grid item xs={12} sm={4}>
               <TextField
-                autoFocus
-                required
-                margin="dense"
-                id="dataSubject"
-                name="dataSubject"
-                label="Imię i nazwisko wnioskodawcy"
-                type="text"
                 fullWidth
+                label="Search"
                 variant="outlined"
-                value={newRequest.dataSubject}
-                onChange={handleInputChange}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by data subject or description"
               />
             </Grid>
-            <Grid item xs={12}>
-              <TextField
-                required
-                margin="dense"
-                id="contactInfo"
-                name="contactInfo"
-                label="Dane kontaktowe (email lub telefon)"
-                type="text"
-                fullWidth
-                variant="outlined"
-                value={newRequest.contactInfo}
-                onChange={handleInputChange}
-              />
+            
+            <Grid item xs={12} sm={4}>
+              <FormControl fullWidth variant="outlined">
+                <InputLabel>Status</InputLabel>
+                <Select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  label="Status"
+                >
+                  <MenuItem value="">All</MenuItem>
+                  <MenuItem value="new">New</MenuItem>
+                  <MenuItem value="in_progress">In Progress</MenuItem>
+                  <MenuItem value="completed">Completed</MenuItem>
+                  <MenuItem value="rejected">Rejected</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            
+            <Grid item xs={12} sm={4}>
+              <FormControl fullWidth variant="outlined">
+                <InputLabel>Type</InputLabel>
+                <Select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  label="Type"
+                >
+                  <MenuItem value="">All</MenuItem>
+                  <MenuItem value="access">Access to Data</MenuItem>
+                  <MenuItem value="rectification">Data Rectification</MenuItem>
+                  <MenuItem value="erasure">Data Erasure</MenuItem>
+                  <MenuItem value="restriction">Processing Restriction</MenuItem>
+                  <MenuItem value="portability">Data Portability</MenuItem>
+                  <MenuItem value="objection">Processing Objection</MenuItem>
+                </Select>
+              </FormControl>
             </Grid>
           </Grid>
-        );
-      case 1:
-        return (
-          <FormControl fullWidth margin="dense">
-            <InputLabel id="request-type-label">Typ wniosku</InputLabel>
-            <Select
-              labelId="request-type-label"
-              id="type"
-              value={newRequest.type}
-              label="Typ wniosku"
-              onChange={handleTypeChange}
-            >
-              <MenuItem value="access">Dostęp do danych</MenuItem>
-              <MenuItem value="rectification">Sprostowanie danych</MenuItem>
-              <MenuItem value="erasure">Usunięcie danych</MenuItem>
-              <MenuItem value="restriction">Ograniczenie przetwarzania</MenuItem>
-              <MenuItem value="portability">Przeniesienie danych</MenuItem>
-              <MenuItem value="objection">Sprzeciw wobec przetwarzania</MenuItem>
-            </Select>
-          </FormControl>
-        );
-      case 2:
-        return (
-          <TextField
-            required
-            margin="dense"
-            id="description"
-            name="description"
-            label="Szczegółowy opis wniosku"
-            type="text"
-            fullWidth
-            variant="outlined"
-            multiline
-            rows={4}
-            value={newRequest.description}
-            onChange={handleInputChange}
-          />
-        );
-      case 3:
-        return (
-          <Box>
-            <Typography variant="h6" gutterBottom>
-              Podsumowanie wniosku
-            </Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}>
-                <Typography variant="subtitle2" color="text.secondary">
-                  Wnioskodawca
-                </Typography>
-                <Typography variant="body1" gutterBottom>
-                  {newRequest.dataSubject}
-                </Typography>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <Typography variant="subtitle2" color="text.secondary">
-                  Dane kontaktowe
-                </Typography>
-                <Typography variant="body1" gutterBottom>
-                  {newRequest.contactInfo}
-                </Typography>
-              </Grid>
-              <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary">
-                  Typ wniosku
-                </Typography>
-                <Typography variant="body1" gutterBottom>
-                  {newRequest.typeName}
-                </Typography>
-              </Grid>
-              <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary">
-                  Opis wniosku
-                </Typography>
-                <Typography variant="body1" paragraph>
-                  {newRequest.description}
-                </Typography>
-              </Grid>
-            </Grid>
-          </Box>
-        );
-      default:
-        return 'Nieznany krok';
-    }
-  };
-
-  return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Wnioski podmiotów danych
-      </Typography>
-      
-      {showSuccessAlert && (
-        <Alert severity="success" sx={{ mb: 3 }} onClose={() => setShowSuccessAlert(false)}>
-          Wniosek został pomyślnie złożony i zostanie rozpatrzony w ciągu 30 dni.
-        </Alert>
-      )}
-      
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <TextField
-            label="Wyszukaj"
-            variant="outlined"
-            size="small"
-            value={searchTerm}
-            onChange={handleSearchChange}
-            sx={{ minWidth: 200 }}
-          />
-          <FormControl sx={{ minWidth: 150 }} size="small">
-            <InputLabel id="status-filter-label">Status</InputLabel>
-            <Select
-              labelId="status-filter-label"
-              id="status-filter"
-              value={statusFilter}
-              label="Status"
-              onChange={handleStatusFilterChange}
-            >
-              <MenuItem value="all">Wszystkie</MenuItem>
-              <MenuItem value="Nowy">Nowe</MenuItem>
-              <MenuItem value="W trakcie">W trakcie</MenuItem>
-              <MenuItem value="Zakończony">Zakończone</MenuItem>
-              <MenuItem value="Odrzucony">Odrzucone</MenuItem>
-            </Select>
-          </FormControl>
-          <FormControl sx={{ minWidth: 150 }} size="small">
-            <InputLabel id="type-filter-label">Typ wniosku</InputLabel>
-            <Select
-              labelId="type-filter-label"
-              id="type-filter"
-              value={typeFilter}
-              label="Typ wniosku"
-              onChange={handleTypeFilterChange}
-            >
-              <MenuItem value="all">Wszystkie</MenuItem>
-              <MenuItem value="access">Dostęp do danych</MenuItem>
-              <MenuItem value="rectification">Sprostowanie danych</MenuItem>
-              <MenuItem value="erasure">Usunięcie danych</MenuItem>
-              <MenuItem value="restriction">Ograniczenie przetwarzania</MenuItem>
-              <MenuItem value="portability">Przeniesienie danych</MenuItem>
-              <MenuItem value="objection">Sprzeciw wobec przetwarzania</MenuItem>
-            </Select>
-          </FormControl>
         </Box>
-        <Button 
-          variant="contained" 
-          startIcon={<AddIcon />}
-          onClick={handleOpenDialog}
-        >
-          Nowy wniosek
-        </Button>
-      </Box>
-      
-      <TableContainer component={Paper}>
-        <Table sx={{ minWidth: 650 }} aria-label="requests table">
-          <TableHead>
-            <TableRow>
-              <TableCell>Wnioskodawca</TableCell>
-              <TableCell>Typ wniosku</TableCell>
-              <TableCell>Data złożenia</TableCell>
-              <TableCell>Termin realizacji</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Przypisany do</TableCell>
-              <TableCell>Akcje</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredRequests.length > 0 ? (
-              filteredRequests.map((request) => (
-                <TableRow key={request.id}>
-                  <TableCell component="th" scope="row">
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <PersonIcon fontSize="small" sx={{ mr: 1 }} />
-                      {request.dataSubject}
-                    </Box>
-                  </TableCell>
-                  <TableCell>{request.typeName}</TableCell>
-                  <TableCell>{request.submissionDate}</TableCell>
-                  <TableCell>{request.deadlineDate}</TableCell>
-                  <TableCell>
-                    <Chip 
-                      label={request.status} 
-                      color={getStatusColor(request.status)} 
-                      size="small" 
-                    />
-                  </TableCell>
-                  <TableCell>{request.assignedTo || '-'}</TableCell>
-                  <TableCell>
-                    <IconButton 
-                      size="small" 
-                      color="primary"
-                      onClick={() => handleOpenDetailsDialog(request)}
-                    >
-                      <VisibilityIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" color="secondary">
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" color="error">
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={7} align="center">
-                  Nie znaleziono wniosków spełniających kryteria wyszukiwania
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-      
-      {/* Dialog do tworzenia nowego wniosku */}
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
-        <DialogTitle>Nowy wniosek podmiotu danych</DialogTitle>
-        <DialogContent>
-          <Stepper activeStep={activeStep} sx={{ pt: 3, pb: 5 }}>
-            {steps.map((label) => (
-              <Step key={label}>
-                <StepLabel>{label}</StepLabel>
-              </Step>
-            ))}
-          </Stepper>
-          {getStepContent(activeStep)}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Anuluj</Button>
-          {activeStep > 0 && (
-            <Button onClick={handleBack}>
-              Wstecz
-            </Button>
-          )}
-          {activeStep === steps.length - 1 ? (
-            <Button 
-              onClick={handleSubmitRequest} 
-              variant="contained"
-              disabled={!newRequest.dataSubject || !newRequest.contactInfo || !newRequest.description}
-            >
-              Złóż wniosek
-            </Button>
-          ) : (
-            <Button 
-              onClick={handleNext} 
-              variant="contained"
-              disabled={
-                (activeStep === 0 && (!newRequest.dataSubject || !newRequest.contactInfo)) ||
-                (activeStep === 2 && !newRequest.description)
-              }
-            >
-              Dalej
-            </Button>
-          )}
-        </DialogActions>
-      </Dialog>
-      
-      {/* Dialog ze szczegółami wniosku */}
-      <Dialog open={openDetailsDialog} onClose={handleCloseDetailsDialog} maxWidth="md" fullWidth>
-        {selectedRequest && (
+        
+        {loading && requests.length === 0 ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
           <>
-            <DialogTitle>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Typography variant="h6">
-                  Wniosek: {selectedRequest.typeName}
-                </Typography>
-                <Chip 
-                  label={selectedRequest.status} 
-                  color={getStatusColor(selectedRequest.status)} 
-                  size="small" 
-                />
-              </Box>
-            </DialogTitle>
-            <DialogContent>
-              <Grid container spacing={2}>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Wnioskodawca
-                  </Typography>
-                  <Typography variant="body1" gutterBottom>
-                    {selectedRequest.dataSubject}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Dane kontaktowe
-                  </Typography>
-                  <Typography variant="body1" gutterBottom>
-                    {selectedRequest.contactInfo}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Data złożenia
-                  </Typography>
-                  <Typography variant="body1" gutterBottom>
-                    {selectedRequest.submissionDate}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Termin realizacji
-                  </Typography>
-                  <Typography variant="body1" gutterBottom>
-                    {selectedRequest.deadlineDate}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12}>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Opis wniosku
-                  </Typography>
-                  <Typography variant="body1" paragraph>
-                    {selectedRequest.description}
-                  </Typography>
-                </Grid>
-                {selectedRequest.assignedTo && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="text.secondary">
-                      Przypisany do
-                    </Typography>
-                    <Typography variant="body1" gutterBottom>
-                      {selectedRequest.assignedTo}
-                    </Typography>
-                  </Grid>
-                )}
-                {selectedRequest.notes && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="text.secondary">
-                      Notatki
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedRequest.notes}
-                    </Typography>
-                  </Grid>
-                )}
-              </Grid>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={handleCloseDetailsDialog}>Zamknij</Button>
-              {selectedRequest.status !== 'Zakończony' && selectedRequest.status !== 'Odrzucony' && (
-                <Button variant="contained" color="primary">
-                  Aktualizuj status
-                </Button>
-              )}
-            </DialogActions>
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Data Subject</TableCell>
+                    <TableCell>Type</TableCell>
+                    <TableCell>Submission Date</TableCell>
+                    <TableCell>Deadline</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell align="right">Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {requests.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} align="center">
+                        No requests found
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    requests.map((request) => (
+                      <TableRow key={request.id}>
+                        <TableCell>{request.dataSubject}</TableCell>
+                        <TableCell>{request.typeName || getRequestTypeName(request.type)}</TableCell>
+                        <TableCell>
+                          {new Date(request.submissionDate).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>
+                          {new Date(request.deadlineDate).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>
+                          {renderStatusBadge(request.status)}
+                        </TableCell>
+                        <TableCell align="right">
+                          <IconButton
+                            color="primary"
+                            onClick={() => handleViewRequest(request.id)}
+                          >
+                            <Visibility />
+                          </IconButton>
+                          
+                          {hasPermission('requests', 'update') && (
+                            <IconButton
+                              color="secondary"
+                              onClick={() => handleEditRequest(request.id)}
+                            >
+                              <Edit />
+                            </IconButton>
+                          )}
+                          
+                          {hasPermission('requests', 'delete') && (
+                            <IconButton
+                              color="error"
+                              onClick={() => handleDeleteRequest(request.id)}
+                            >
+                              <Delete />
+                            </IconButton>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            
+            <TablePagination
+              rowsPerPageOptions={[5, 10, 25]}
+              component="div"
+              count={totalCount}
+              rowsPerPage={rowsPerPage}
+              page={page}
+              onPageChange={handleChangePage}
+              onRowsPerPageChange={handleChangeRowsPerPage}
+            />
           </>
         )}
+      </Paper>
+      
+      {/* Request Dialog */}
+      <Dialog
+        open={openDialog}
+        onClose={handleCloseDialog}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          {dialogMode === 'create' ? 'New Data Subject Request' : 
+           dialogMode === 'edit' ? 'Edit Request' : 'Request Details'}
+        </DialogTitle>
+        
+        <form onSubmit={handleSubmitRequest}>
+          <DialogContent>
+            <Grid container spacing={2}>
+              {dialogMode === 'create' && (
+                <Grid item xs={12}>
+                  <FormControl fullWidth>
+                    <InputLabel>Request Type</InputLabel>
+                    <Select
+                      name="type"
+                      value={currentRequest.type}
+                      onChange={handleInputChange}
+                      label="Request Type"
+                      required
+                      disabled={dialogMode === 'view'}
+                    >
+                      <MenuItem value="access">Access to Data</MenuItem>
+                      <MenuItem value="rectification">Data Rectification</MenuItem>
+                      <MenuItem value="erasure">Data Erasure</MenuItem>
+                      <MenuItem value="restriction">Processing Restriction</MenuItem>
+                      <MenuItem value="portability">Data Portability</MenuItem>
+                      <MenuItem value="objection">Processing Objection</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+              )}
+              
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Data Subject Name"
+                  name="dataSubject"
+                  value={currentRequest.dataSubject}
+                  onChange={handleInputChange}
+                  required
+                  disabled={dialogMode === 'view'}
+                />
+              </Grid>
+              
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Contact Information"
+                  name="contactInfo"
+                  value={currentRequest.contactInfo}
+                  onChange={handleInputChange}
+                  required
+                  disabled={dialogMode === 'view'}
+                  placeholder="Email or phone number"
+                />
+              </Grid>
+              
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Request Description"
+                  name="description"
+                  value={currentRequest.description}
+                  onChange={handleInputChange}
+                  multiline
+                  rows={4}
+                  disabled={dialogMode === 'view'}
+                />
+              </Grid>
+              
+              {dialogMode === 'edit' && (
+                <>
+                  <Grid item xs={12} sm={6}>
+                    <FormControl fullWidth>
+                      <InputLabel>Status</InputLabel>
+                      <Select
+                        name="status"
+                        value={currentRequest.status}
+                        onChange={handleInputChange}
+                        label="Status"
+                        disabled={dialogMode === 'view'}
+                      >
+                        <MenuItem value="new">New</MenuItem>
+                        <MenuItem value="in_progress">In Progress</MenuItem>
+                        <MenuItem value="completed">Completed</MenuItem>
+                        <MenuItem value="rejected">Rejected</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Notes"
+                      name="notes"
+                      value={currentRequest.notes || ''}
+                      onChange={handleInputChange}
+                      multiline
+                      rows={3}
+                      disabled={dialogMode === 'view'}
+                    />
+                  </Grid>
+                </>
+              )}
+            </Grid>
+          </DialogContent>
+          
+          <DialogActions>
+            <Button onClick={handleCloseDialog}>
+              {dialogMode === 'view' ? 'Close' : 'Cancel'}
+            </Button>
+            
+            {dialogMode !== 'view' && (
+              <Button
+                type="submit"
+                variant="contained"
+                color="primary"
+                disabled={loading}
+              >
+                {loading ? <CircularProgress size={24} /> : 'Save'}
+              </Button>
+            )}
+          </DialogActions>
+        </form>
       </Dialog>
-    </Box>
+    </Container>
   );
 };
 

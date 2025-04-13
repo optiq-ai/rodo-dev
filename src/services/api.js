@@ -21,6 +21,9 @@ const api = axios.create({
   withCredentials: true // Enable sending cookies with cross-origin requests
 });
 
+// Log API configuration for debugging
+console.log('API configured with baseURL:', API_URL);
+
 // Request interceptor for adding auth token
 api.interceptors.request.use(
   (config) => {
@@ -31,6 +34,7 @@ api.interceptors.request.use(
     return config;
   },
   (error) => {
+    console.error('API request interceptor error:', error);
     return Promise.reject(error);
   }
 );
@@ -41,6 +45,8 @@ api.interceptors.response.use(
     return response;
   },
   async (error) => {
+    console.error('API response error:', error.response?.status, error.message);
+    
     const originalRequest = error.config;
     
     // If error is 401 (Unauthorized) and not already retrying
@@ -69,6 +75,7 @@ api.interceptors.response.use(
         localStorage.removeItem('refreshToken');
         window.location.href = '/login';
       } catch (_error) {
+        console.error('Token refresh failed:', _error);
         localStorage.removeItem('token');
         localStorage.removeItem('refreshToken');
         window.location.href = '/login';

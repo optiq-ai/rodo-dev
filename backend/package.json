@@ -36,7 +36,8 @@
     "nodemailer": "^6.9.1",
     "pg": "^8.10.0",
     "sequelize": "^6.31.0",
-    "winston": "^3.8.2"
+    "winston": "^3.8.2",
+    "ws": "^8.18.1"
   },
   "devDependencies": {
     "eslint": "^8.57.1",

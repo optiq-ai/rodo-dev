@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import WebSocketService from '../services/websocket.service';
+import WebSocketService from './websocket.service';
 import { useSnackbar } from 'notistack';
 
 const WebSocketProvider = ({ children }) => {
@@ -7,6 +7,9 @@ const WebSocketProvider = ({ children }) => {
   const wsUrl = process.env.REACT_APP_WS_URL || `ws://${window.location.hostname}:3011/ws`;
 
   useEffect(() => {
+    // Log the WebSocket URL being used
+    console.log('WebSocket connecting to:', wsUrl);
+    
     // Connect to WebSocket server
     WebSocketService.connect(wsUrl);
 
