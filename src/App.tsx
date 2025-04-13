@@ -11,7 +11,6 @@ import RegistersPage from './pages/RegistersPage';
 import RiskAnalysisPage from './pages/RiskAnalysisPage';
 import LoginPage from './pages/LoginPage';
 import { AuthProvider } from './services/auth/AuthContext';
-import ProtectedRoute from './services/auth/ProtectedRoute';
 import WebSocketProvider from './services/WebSocketProvider';
 
 // Placeholder components for other pages
@@ -27,6 +26,7 @@ const Settings = () => <div>Ustawienia</div>;
 const Help = () => <div>Pomoc</div>;
 const Forbidden = () => <div>Brak dostępu - nie masz wymaganych uprawnień</div>;
 
+// Tymczasowo wyłączamy autoryzację - wszystkie strony są dostępne bez logowania
 function App() {
   return (
     <SnackbarProvider maxSnack={3}>
@@ -39,77 +39,21 @@ function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/forbidden" element={<Forbidden />} />
                 
-                <Route path="/" element={
-                  <ProtectedRoute>
-                    <MainLayout />
-                  </ProtectedRoute>
-                }>
+                <Route path="/" element={<MainLayout />}>
                   <Route index element={<Dashboard />} />
-                  <Route path="documents" element={
-                    <ProtectedRoute requiredPermission="view_documents">
-                      <DocumentsPage />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="registers" element={
-                    <ProtectedRoute requiredPermission="view_all">
-                      <RegistersPage />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="risk-analysis" element={
-                    <ProtectedRoute requiredPermission="view_all">
-                      <RiskAnalysisPage />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="incidents" element={
-                    <ProtectedRoute requiredPermission="view_all">
-                      <Incidents />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="requests" element={
-                    <ProtectedRoute requiredPermission="manage_requests">
-                      <Requests />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="trainings" element={
-                    <ProtectedRoute>
-                      <Trainings />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="compliance" element={
-                    <ProtectedRoute requiredPermission="view_all">
-                      <Compliance />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="notifications" element={
-                    <ProtectedRoute>
-                      <Notifications />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="reports" element={
-                    <ProtectedRoute requiredPermission="view_reports">
-                      <Reports />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="it-management" element={
-                    <ProtectedRoute requiredPermission="view_all">
-                      <ITManagement />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="integrations" element={
-                    <ProtectedRoute requiredPermission="view_all">
-                      <Integrations />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="settings" element={
-                    <ProtectedRoute requiredPermission="all">
-                      <Settings />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="help" element={
-                    <ProtectedRoute>
-                      <Help />
-                    </ProtectedRoute>
-                  } />
+                  <Route path="documents" element={<DocumentsPage />} />
+                  <Route path="registers" element={<RegistersPage />} />
+                  <Route path="risk-analysis" element={<RiskAnalysisPage />} />
+                  <Route path="incidents" element={<Incidents />} />
+                  <Route path="requests" element={<Requests />} />
+                  <Route path="trainings" element={<Trainings />} />
+                  <Route path="compliance" element={<Compliance />} />
+                  <Route path="notifications" element={<Notifications />} />
+                  <Route path="reports" element={<Reports />} />
+                  <Route path="it-management" element={<ITManagement />} />
+                  <Route path="integrations" element={<Integrations />} />
+                  <Route path="settings" element={<Settings />} />
+                  <Route path="help" element={<Help />} />
                 </Route>
               </Routes>
             </Router>
