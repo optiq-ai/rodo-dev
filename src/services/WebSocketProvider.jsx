@@ -4,7 +4,20 @@ import { useSnackbar } from 'notistack';
 
 const WebSocketProvider = ({ children }) => {
   const { enqueueSnackbar } = useSnackbar();
-  const wsUrl = process.env.REACT_APP_WS_URL || `ws://${window.location.hostname}:3011/ws`;
+  
+  // Get WebSocket URL based on current environment
+  const getWebSocketUrl = () => {
+    // Check if we're running in production (on the actual domain)
+    if (window.location.hostname === 'rodo.optiq-ai.pl') {
+      // For production domain, use the same origin without port specification
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${protocol}//${window.location.hostname}/ws`;
+    }
+    // Default to localhost for development
+    return process.env.REACT_APP_WS_URL || 'ws://localhost:3011/ws';
+  };
+  
+  const wsUrl = getWebSocketUrl();
 
   useEffect(() => {
     // Log the WebSocket URL being used

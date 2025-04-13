@@ -4,7 +4,8 @@ import axios from 'axios';
 const getApiUrl = () => {
   // Check if we're running in production (on the actual domain)
   if (window.location.hostname === 'rodo.optiq-ai.pl') {
-    return `${window.location.protocol}//${window.location.hostname}:3011/api/v1`;
+    // For production domain, use the same origin without port specification
+    return `${window.location.protocol}//${window.location.hostname}/api/v1`;
   }
   // Default to localhost for development
   return process.env.REACT_APP_API_URL || 'http://localhost:3011/api/v1';
@@ -16,9 +17,10 @@ const API_URL = getApiUrl();
 const api = axios.create({
   baseURL: API_URL,
   headers: {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
   },
-  withCredentials: true // Enable sending cookies with cross-origin requests
+  withCredentials: false // Disable credentials for cross-origin requests to avoid CORS preflight issues
 });
 
 // Log API configuration for debugging
@@ -31,6 +33,7 @@ api.interceptors.request.use(
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
     }
+    console.log('Making request to:', config.url);
     return config;
   },
   (error) => {
@@ -42,10 +45,11 @@ api.interceptors.request.use(
 // Response interceptor for handling errors
 api.interceptors.response.use(
   (response) => {
+    console.log('Received successful response from:', response.config.url);
     return response;
   },
   async (error) => {
-    console.error('API response error:', error.response?.status, error.message);
+    console.error('API response error:', error.response?.status, error.message, 'URL:', error.config?.url);
     
     const originalRequest = error.config;
     

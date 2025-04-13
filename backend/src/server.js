@@ -56,29 +56,28 @@ wss.on('connection', (ws) => {
   });
 });
 
-// CORS configuration
-const corsOptions = {
-  origin: ['http://localhost:3010', 'https://rodo.optiq-ai.pl', 'http://rodo.optiq-ai.pl'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+// CORS configuration - RELAXED FOR DEVELOPMENT
+// Allow all origins for temporary development purposes
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   credentials: true,
   optionsSuccessStatus: 200
-};
-
-// Middleware
-app.use(cors(corsOptions));
+}));
 
 // Add preflight OPTIONS handling for all routes
-app.options('*', cors(corsOptions));
+app.options('*', cors());
 
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-      'connect-src': ["'self'", 'http://localhost:3010', 'https://rodo.optiq-ai.pl', 'http://rodo.optiq-ai.pl', 'ws://localhost:3011', 'wss://rodo.optiq-ai.pl:3011', 'ws://rodo.optiq-ai.pl:3011']
-    }
-  }
-})); // Security headers with WebSocket allowance
+// Disable helmet for development to avoid security restrictions
+// app.use(helmet({...}));
+
+// Basic security headers without strict CSP
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  next();
+});
 
 app.use(express.json({ limit: '10mb' })); // Parse JSON bodies with increased limit for file uploads
 app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Parse URL-encoded bodies
@@ -139,6 +138,7 @@ const startServer = async () => {
     server.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);
       logger.info(`WebSocket server is running on ws://localhost:${PORT}/ws`);
+      logger.info('NOTICE: Security restrictions have been relaxed for development purposes');
     });
   } catch (error) {
     logger.error('Failed to start server:', error);
