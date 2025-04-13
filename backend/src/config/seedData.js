@@ -58,7 +58,7 @@ const createDefaultUsers = async (sequelize, models) => {
 
       // Create default IOD user
       const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash('Iod123!', salt);
+      const hashedPassword = await bcrypt.hash('Iod123!!', salt);
       
       await User.create({
         username: 'iod',
