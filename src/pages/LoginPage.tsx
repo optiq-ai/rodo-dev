@@ -30,13 +30,12 @@ const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Redirect if already authenticated
+  // Automatyczne przekierowanie do dashboardu (autoryzacja wyłączona)
   useEffect(() => {
-    if (isAuthenticated) {
-      const from = location.state?.from?.pathname || '/dashboard';
-      navigate(from, { replace: true });
-    }
-  }, [isAuthenticated, navigate, location]);
+    // Zawsze przekierowujemy do dashboardu, niezależnie od stanu uwierzytelnienia
+    const from = location.state?.from?.pathname || '/';
+    navigate(from, { replace: true });
+  }, [navigate, location]);
   
   // Password strength checker
   useEffect(() => {
