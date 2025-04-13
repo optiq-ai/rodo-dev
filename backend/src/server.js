@@ -6,10 +6,11 @@ const path = require('path');
 const dotenv = require('dotenv');
 const http = require('http');
 const WebSocket = require('ws');
-const { connectToDatabase } = require('./config/database');
+const { sequelize, connectToDatabase } = require('./config/database');
 const { createDefaultUsers } = require('./config/seedData');
 const logger = require('./utils/logger');
 const routes = require('./routes');
+const models = require('./models');
 
 // Load environment variables
 dotenv.config();
@@ -130,8 +131,8 @@ const startServer = async () => {
       process.exit(1);
     }
     
-    // Initialize database with default users
-    await createDefaultUsers();
+    // Initialize database with default users - pass sequelize and models as parameters
+    await createDefaultUsers(sequelize, models);
     logger.info('Database initialization completed');
     
     // Start the server
