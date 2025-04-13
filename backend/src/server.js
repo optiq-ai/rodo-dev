@@ -55,21 +55,30 @@ wss.on('connection', (ws) => {
   });
 });
 
+// CORS configuration
+const corsOptions = {
+  origin: ['http://localhost:3010', 'https://rodo.optiq-ai.pl', 'http://rodo.optiq-ai.pl'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
 // Middleware
+app.use(cors(corsOptions));
+
+// Add preflight OPTIONS handling for all routes
+app.options('*', cors(corsOptions));
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-      'connect-src': ["'self'", process.env.CORS_ORIGIN, 'ws://localhost:3011', 'wss://rodo.optiq-ai.pl:3011']
+      'connect-src': ["'self'", 'http://localhost:3010', 'https://rodo.optiq-ai.pl', 'http://rodo.optiq-ai.pl', 'ws://localhost:3011', 'wss://rodo.optiq-ai.pl:3011', 'ws://rodo.optiq-ai.pl:3011']
     }
   }
 })); // Security headers with WebSocket allowance
 
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
 app.use(express.json({ limit: '10mb' })); // Parse JSON bodies with increased limit for file uploads
 app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Parse URL-encoded bodies
 app.use(morgan('combined', { stream: logger.stream })); // HTTP request logging
