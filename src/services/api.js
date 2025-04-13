@@ -2,12 +2,22 @@ import axios from 'axios';
 
 // Determine the API URL based on the current environment
 const getApiUrl = () => {
+  // Get the current hostname
+  const hostname = window.location.hostname;
+  
   // Check if we're running in production (on the actual domain)
-  if (window.location.hostname === 'rodo.optiq-ai.pl') {
+  if (hostname === 'rodo.optiq-ai.pl') {
     // For production domain, use the same origin without port specification
-    return `${window.location.protocol}//${window.location.hostname}/api/v1`;
+    return `${window.location.protocol}//${hostname}/api/v1`;
   }
-  // Default to localhost for development
+  
+  // For any other domain (including IP addresses), use that domain with the backend port
+  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+    // Use the same protocol and hostname but with the backend port
+    return `${window.location.protocol}//${hostname}:3011/api/v1`;
+  }
+  
+  // Default to localhost for local development
   return process.env.REACT_APP_API_URL || 'http://localhost:3011/api/v1';
 };
 
@@ -25,6 +35,8 @@ const api = axios.create({
 
 // Log API configuration for debugging
 console.log('API configured with baseURL:', API_URL);
+console.log('Current hostname:', window.location.hostname);
+console.log('Current origin:', window.location.origin);
 
 // Request interceptor for adding auth token
 api.interceptors.request.use(

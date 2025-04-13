@@ -2,12 +2,22 @@ import React, { useEffect, useRef, useState } from 'react';
 
 // Get WebSocket URL based on current environment
 const getWebSocketUrl = () => {
+  // Get the current hostname
+  const hostname = window.location.hostname;
+  
   // Check if we're running in production (on the actual domain)
-  if (window.location.hostname === 'rodo.optiq-ai.pl') {
+  if (hostname === 'rodo.optiq-ai.pl') {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${window.location.hostname}:3011/ws`;
+    return `${protocol}//${hostname}:3011/ws`;
   }
-  // Default to localhost for development
+  
+  // For any other domain (including IP addresses), use that domain with the backend port
+  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${hostname}:3011/ws`;
+  }
+  
+  // Default to localhost for local development
   return 'ws://localhost:3011/ws';
 };
 
@@ -24,6 +34,8 @@ const WebSocketService = {
     }
     
     console.log('Connecting to WebSocket at:', url);
+    console.log('Current hostname:', window.location.hostname);
+    console.log('Current origin:', window.location.origin);
     
     // Create WebSocket connection
     WebSocketService.socket = new WebSocket(url);
